@@ -2,19 +2,111 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import whisperx
+from whisperx.diarize import DiarizationPipeline
 
 
 @dataclass
 class TranscribeConfig:
     model_name: str = "large-v3"
     language: str = "ru"
-    device: str = "cpu"
-    compute_type: str = "int8"
-    batch_size: int = 8
+    device: str = field(default_factory=lambda: os.getenv("WHISPER_DEVICE", "cpu"))
+    compute_type: str = field(
+        default_factory=lambda: os.getenv("WHISPER_COMPUTE_TYPE", "int8")
+    )
+    batch_size: int = field(
+        default_factory=lambda: int(os.getenv("WHISPER_BATCH_SIZE", "8"))
+    )
+    diarization_model: str = "pyannote/speaker-diarization-3.1"
+
+
+@dataclass
+class LoadedModels:
+    whisper: Any
+    align_model: Any
+    align_metadata: Any
+    diarize: DiarizationPipeline | None
+
+
+def load_models(config: TranscribeConfig, hf_token: str | None = None) -> LoadedModels:
+    whisper = whisperx.load_model(
+        config.model_name,
+        config.device,
+        compute_type=config.compute_type,
+        language=config.language,
+    )
+    align_model, align_metadata = whisperx.load_align_model(
+        language_code=config.language, device=config.device
+    )
+    diarize = None
+    if hf_token:
+        diarize = DiarizationPipeline(
+            model_name=config.diarization_model,
+            token=hf_token,
+            device=config.device,
+        )
+    return LoadedModels(whisper, align_model, align_metadata, diarize)
+
+
+def transcribe_one(
+    audio_path: Path,
+    output_dir: Path,
+    models: LoadedModels,
+    config: TranscribeConfig,
+) -> dict:
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    audio = whisperx.load_audio(str(audio_path))
+    result = models.whisper.transcribe(
+        audio, batch_size=config.batch_size, language=config.language
+    )
+    result = whisperx.align(
+        result["segments"],
+        models.align_model,
+        models.align_metadata,
+        audio,
+        config.device,
+        return_char_alignments=False,
+    )
+
+    raw_path = output_dir / "raw.json"
+    raw_path.write_text(
+        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    diarized = False
+    diarize_error: str | None = None
+    if models.diarize is not None:
+        try:
+            diarize_segments = models.diarize(audio)
+            result = whisperx.assign_word_speakers(diarize_segments, result)
+            raw_path.write_text(
+                json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            diarized = True
+        except Exception as e:
+            diarize_error = f"{type(e).__name__}: {e}"
+
+    metadata = {
+        "audio_path": str(audio_path),
+        "model": config.model_name,
+        "language": config.language,
+        "device": config.device,
+        "compute_type": config.compute_type,
+        "diarized": diarized,
+        "diarize_error": diarize_error,
+        "segment_count": len(result.get("segments", [])),
+    }
+    (output_dir / "metadata.json").write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    return result
 
 
 def transcribe(
@@ -25,54 +117,5 @@ def transcribe(
     config: TranscribeConfig | None = None,
 ) -> dict:
     cfg = config or TranscribeConfig()
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    model = whisperx.load_model(
-        cfg.model_name,
-        cfg.device,
-        compute_type=cfg.compute_type,
-        language=cfg.language,
-    )
-    audio = whisperx.load_audio(str(audio_path))
-    result = model.transcribe(audio, batch_size=cfg.batch_size, language=cfg.language)
-
-    align_model, align_metadata = whisperx.load_align_model(
-        language_code=cfg.language, device=cfg.device
-    )
-    result = whisperx.align(
-        result["segments"],
-        align_model,
-        align_metadata,
-        audio,
-        cfg.device,
-        return_char_alignments=False,
-    )
-
-    diarized = False
-    if hf_token:
-        diarize_model = whisperx.DiarizationPipeline(
-            use_auth_token=hf_token, device=cfg.device
-        )
-        diarize_segments = diarize_model(audio)
-        result = whisperx.assign_word_speakers(diarize_segments, result)
-        diarized = True
-
-    raw_path = output_dir / "raw.json"
-    raw_path.write_text(
-        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-
-    metadata = {
-        "audio_path": str(audio_path),
-        "model": cfg.model_name,
-        "language": cfg.language,
-        "device": cfg.device,
-        "compute_type": cfg.compute_type,
-        "diarized": diarized,
-        "segment_count": len(result.get("segments", [])),
-    }
-    (output_dir / "metadata.json").write_text(
-        json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-
-    return result
+    models = load_models(cfg, hf_token)
+    return transcribe_one(audio_path, output_dir, models, cfg)

@@ -56,6 +56,27 @@ docker compose run --rm app python scripts/transcribe.py data/lectures/file.m4a 
 docker compose up -d postgres redis
 ```
 
+## GPU-режим (Windows + NVIDIA через WSL2)
+
+Для Windows-машины с NVIDIA GPU есть отдельный `Dockerfile.cuda` и override-файл `docker-compose.cuda.yml`. Запуск:
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cuda.yml build app
+docker compose -f docker-compose.yml -f docker-compose.cuda.yml run -d --name psy-batch app python scripts/batch_transcribe.py
+```
+
+Override автоматически выставляет `WHISPER_DEVICE=cuda`, `WHISPER_COMPUTE_TYPE=float16`. CPU-конфиг не трогается — на Mac всё работает как раньше.
+
+Подробная инструкция по WSL2 + NVIDIA + сетевая шара с Mac — в чате с разработчиком.
+
+## Батч-обработка лекций
+
+Скрипт `scripts/batch_transcribe.py` — обрабатывает все аудио в `data/lectures/`, идемпотентно (пропускает уже обработанные). Модели грузятся один раз.
+
+```bash
+docker compose run -d --name psy-batch app python scripts/batch_transcribe.py
+docker logs -f psy-batch
+```
+
 ## Жёсткие принципы (из ТЗ)
 
 1. **Не AI-психолог.** Бот не ведёт терапию, не делает диагностику, не работает с острыми клиентами. Психолог — супервизор и ответственное лицо.
