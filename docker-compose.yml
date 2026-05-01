@@ -29,6 +29,24 @@ services:
       - redis-data:/data
     restart: unless-stopped
 
+  ui:
+    build: .
+    image: psy-helper-app:latest
+    env_file: .env
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./:/app
+      - models-cache:/root/.cache/huggingface
+    command: >
+      streamlit run scripts/streamlit_app.py
+      --server.address=0.0.0.0
+      --server.port=8501
+      --server.headless=true
+      --browser.gatherUsageStats=false
+    depends_on:
+      - postgres
+
 volumes:
   models-cache:
   postgres-data:

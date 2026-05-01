@@ -9,6 +9,7 @@ dependencies = [
     "psycopg[binary]>=3.2.0",
     "pgvector>=0.3.0",
     "sentence-transformers>=3.0.0",
+    "streamlit>=1.38.0",
 ]
 
 [build-system]
