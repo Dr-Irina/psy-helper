@@ -15,6 +15,7 @@ from pgvector.psycopg import register_vector
 from sentence_transformers import SentenceTransformer
 
 from psy_helper.db.connection import connect
+from psy_helper.search import hybrid_search_concepts, hybrid_search_segments
 from psy_helper.taxonomy import CONCEPT_TYPES
 
 load_dotenv()
@@ -40,40 +41,16 @@ def fmt_ts_range(start: float, end: float) -> str:
     return f"{sm}:{ss:02d}–{em}:{es:02d}"
 
 
-def search_concepts(conn, embedding, types: list[str] | None, limit: int = 12):
-    where = ""
-    params: list = [embedding]
-    if types:
-        where = "WHERE type = ANY(%s)"
-        params.append(types)
-    params.extend([embedding, limit])
-    sql = f"""
-        SELECT name, type, description, 1 - (embedding <=> %s) AS score,
-               array_length(source_segments, 1) AS sources_count
-        FROM concepts
-        {where}
-        ORDER BY embedding <=> %s
-        LIMIT %s
-    """
+def do_search_concepts(conn, query_text: str, embedding, types: list[str] | None, limit: int = 12):
     with conn.cursor() as cur:
-        cur.execute(sql, params)
-        return cur.fetchall()
+        return hybrid_search_concepts(
+            cur, query_text, embedding, types=types, limit=limit
+        )
 
 
-def search_segments(conn, embedding, limit: int = 6):
-    sql = """
-        SELECT cs.title, cs.summary, cs.start_ts, cs.end_ts,
-               rt.source_file,
-               1 - (se.embedding <=> %s) AS score
-        FROM clean_segments cs
-        JOIN segment_embeddings se ON se.segment_id = cs.id
-        JOIN raw_transcripts rt ON rt.id = cs.raw_id
-        ORDER BY se.embedding <=> %s
-        LIMIT %s
-    """
+def do_search_segments(conn, query_text: str, embedding, limit: int = 6):
     with conn.cursor() as cur:
-        cur.execute(sql, (embedding, embedding, limit))
-        return cur.fetchall()
+        return hybrid_search_segments(cur, query_text, embedding, limit=limit)
 
 
 def get_active_voice_doc(conn, therapist_name: str = "Анна") -> tuple[int | None, str | None]:
@@ -146,8 +123,8 @@ if query:
         v = get_model().encode(
             [f"query: {query}"], normalize_embeddings=True
         )[0]
-        concepts = search_concepts(conn, v, selected_types or None)
-        segments = search_segments(conn, v)
+        concepts = do_search_concepts(conn, query, v, selected_types or None)
+        segments = do_search_segments(conn, query, v)
 
     col_c, col_s = st.columns([3, 2], gap="large")
 
@@ -155,21 +132,28 @@ if query:
         st.subheader(f"🧩 Концепты ({len(concepts)})")
         if not concepts:
             st.info("Ничего не нашлось — попробуй другие слова.")
-        for name, ctype, description, score, sources_count in concepts:
-            type_label = ctype
-            sources_part = f" · упоминается в {sources_count} блоках" if sources_count else ""
+        for c in concepts:
+            sources_part = f" · упоминается в {c.sources_count} блоках" if c.sources_count else ""
+            ranks_part = []
+            if c.bm25_rank is not None:
+                ranks_part.append(f"bm25 #{c.bm25_rank}")
+            if c.vec_rank is not None:
+                ranks_part.append(f"vec #{c.vec_rank}")
+            ranks_str = " · ".join(ranks_part)
             with st.expander(
-                f"**{name}** · _{type_label}_ · {score:.2f}{sources_part}"
+                f"**{c.name}** · _{c.type}_ · score {c.score:.3f}{sources_part}"
             ):
-                st.write(description or "")
+                st.write(c.description or "")
+                if ranks_str:
+                    st.caption(f"_{ranks_str}_")
 
     with col_s:
         st.subheader(f"📖 Блоки лекций ({len(segments)})")
-        for title, summary, start_ts, end_ts, source_file, score in segments:
-            lecture = source_file.split("/")[-2]
-            ts = fmt_ts_range(start_ts, end_ts)
-            with st.expander(f"**{title}** · _{ts}_ · {score:.2f}"):
-                st.write(summary or "")
+        for s in segments:
+            lecture = s.source_file.split("/")[-2]
+            ts = fmt_ts_range(s.start_ts, s.end_ts)
+            with st.expander(f"**{s.title}** · _{ts}_ · score {s.score:.3f}"):
+                st.write(s.summary or "")
                 st.caption(f"📁 {lecture}")
 else:
     st.markdown(

@@ -29,6 +29,7 @@ ARG TORCH_CUDA_INDEX=https://download.pytorch.org/whl/cu128
 
 COPY pyproject.toml ./
 RUN pip install --upgrade pip \
+    && pip install --ignore-installed blinker \
     && pip install torch torchaudio --index-url $TORCH_CUDA_INDEX \
     && pip install .
 
