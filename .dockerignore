@@ -1,0 +1,26 @@
+.git
+.gitignore
+.idea
+.vscode
+.DS_Store
+
+__pycache__
+*.py[cod]
+*$py.class
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.venv
+venv
+
+# Большие данные — монтируются как volume, не копируются в образ
+data/
+models/
+
+# Документация в образ не нужна
+docs/
+
+# Секреты
+.env
+.env.local
