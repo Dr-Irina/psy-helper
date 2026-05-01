@@ -7,6 +7,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+# PyTorch 2.6+ переключил torch.load на weights_only=True по умолчанию.
+# Чекпоинты pyannote содержат omegaconf и lightning-объекты, не входящие
+# в safe-globals, и валятся с UnpicklingError. Модели тянем из официального
+# huggingface-репо pyannote — источник доверенный, weights_only=False безопасен.
+import torch as _torch
+
+_orig_torch_load = _torch.load
+
+def _patched_torch_load(*args, **kwargs):
+    kwargs.setdefault("weights_only", False)
+    return _orig_torch_load(*args, **kwargs)
+
+_torch.load = _patched_torch_load
+
 import whisperx
 from whisperx.diarize import DiarizationPipeline
 
