@@ -61,10 +61,15 @@ def load_models(config: TranscribeConfig, hf_token: str | None = None) -> Loaded
     )
     diarize = None
     if hf_token:
+        # Разные версии whisperx используют разные имена параметра для HF-токена.
+        # Старые: use_auth_token. Новые: token. Подбираем по сигнатуре.
+        import inspect
+        sig = inspect.signature(DiarizationPipeline.__init__)
+        token_kw = "token" if "token" in sig.parameters else "use_auth_token"
         diarize = DiarizationPipeline(
             model_name=config.diarization_model,
-            token=hf_token,
             device=config.device,
+            **{token_kw: hf_token},
         )
     return LoadedModels(whisper, align_model, align_metadata, diarize)
 
