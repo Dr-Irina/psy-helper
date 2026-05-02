@@ -23,6 +23,20 @@ def _patched_torch_load(*args, **kwargs):
 
 _torch.load = _patched_torch_load
 
+# pyannote.audio 3.4.x внутри вызывает hf_hub_download(use_auth_token=...),
+# а свежий huggingface_hub этот kwarg удалил. Конвертируем на лету.
+# (пин версий не помогает — цепочка whisperx → pyannote → huggingface_hub
+# имеет разные несовместимые минимумы.)
+import huggingface_hub as _hf_hub
+_orig_hf_hub_download = _hf_hub.hf_hub_download
+
+def _patched_hf_hub_download(*args, **kwargs):
+    if "use_auth_token" in kwargs:
+        kwargs["token"] = kwargs.pop("use_auth_token")
+    return _orig_hf_hub_download(*args, **kwargs)
+
+_hf_hub.hf_hub_download = _patched_hf_hub_download
+
 import whisperx
 from whisperx.diarize import DiarizationPipeline
 
