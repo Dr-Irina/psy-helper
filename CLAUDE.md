@@ -16,10 +16,11 @@ AI-ассистент конкретного психолога **Анны**. **
 | Смысловых блоков (clean_segments) | **1073** |
 | Концептов (concepts) | **3919** |
 | Эмбеддингов (1024-dim e5) | для всех segments + concepts |
-| Voice-document | v1 (черновик), активен в БД |
+| Voice-document | v1 в БД (устарел), **v2 сгенерирован**, ждёт ревью Анны |
+| Multi-label теги концептов | **`topics` + `subtopics` + `hunt_stages`** (Haiku 4.5 + Batch) |
 | Streamlit UI | работает на http://localhost:8501 |
 | Гибридный поиск | BM25 + vector + RRF |
-| Всё локально | да, кроме `claude -p` для batch |
+| LLM-обработка | **Anthropic API (Haiku/Sonnet + Batch)** для новых задач; legacy через `claude -p` |
 
 **Что сделано:** транскрипция (Mac CPU + Windows GPU) → смысловая сегментация (claude -p) → извлечение концептов 9 типов (claude -p) → эмбеддинги локально → ingest в Postgres → гибридный поиск → Streamlit UI с 4 вкладками (поиск / по типам / по лекциям / похожие).
 
@@ -229,12 +230,67 @@ POSTGRES_DB=psy_helper
 
 ---
 
+## Контент-генератор: маркетинговая воронка (2026-05-27, в активной разработке)
+
+Параллельно с MVP-0 в работу взят промежуточный MVP — **маркетинговая воронка Академии Супружества**. Полное ТЗ: `tech_spec_marketing_funnel.md`.
+
+### Ключевые документы
+
+| Файл | Что |
+|---|---|
+| `tech_spec_marketing_funnel.md` | Полное ТЗ воронки (5 ступеней Ханта + сегменты + каналы) |
+| `docs/Audience Research.md` | Исследование ЦА от Анны (4 сегмента, 4 психотипа, 5 конкурентов) |
+| `docs/marketing_system_for_anna.md` | Обзор системы для самой Анны (нетехнический) |
+| `~/.claude/plans/graceful-mixing-flurry.md` | План гибкой параметризации генератора |
+
+### Архитектурные принципы (критично!)
+
+- **Two-author**: Анна + Оксана = «Академия Супружества». Voice profiles: `anna_lecture`, `anna_product`, `joint_product`. Подробно — memory `project_anna_oksana_academy.md`.
+- **Два регистра**: лекторский (ты+мат, для подкастов/эфиров) vs продуктовый (Вы+без мата, для постов/email). Memory `project_voice_registers.md`.
+- **Layered config (5 слоёв)**: Voice Profile (**КТО**) × Segment (**КОМУ**) × Psycho Type (**ЧЕМ** зацепить) × Channel (**ГДЕ**) × Content Form (**КАК**). Один universal generator entry point на любой тип контента.
+- **Multi-tenant ready**: имя «Анна» нигде не хардкодим, всё параметризовано (для фабрики под других экспертов).
+- **Главный сегмент v1**: «Усталая жена», главный психотип — «Тёрпеливая». 70% контента — на эту пару. Memory `project_main_audience.md`.
+- **Антипаттерны языка** (запрещены в продуктовом регистре): «женственность», «истинная природа», «гармоничные отношения», «наш круг», «гарантия результата». Memory `project_language_antipatterns.md`.
+
+### Что построено (инфраструктура)
+
+- **БД**: миграция `003_classification_columns.sql` → колонки `concepts.topics[]`, `subtopics[]`, `hunt_stages[]` + GIN-индексы. Все 3919 концептов размечены через Haiku 4.5 + Batch API.
+- **`data/voice_document/v2_draft.md`** — лекторский voice-doc (Sonnet 4.6 + Map-Reduce, 6 разделов). Ждёт ревью Анны.
+- **`data/style/`** — артефакты стиля: `raw_quotes.jsonl`, `lexicon.json`, `forbidden_topics.json` (v2 с antipatterns).
+- **`data/audience/`** — структурированные данные из Audience Research: segments, psycho_types, competitors, gaps, positioning.
+- **`data/voice_profiles/`** — 3 YAML профиля голоса.
+- **`data/channels/`** — 10 YAML каналов: `tg_post`, `tg_story`, `insta_post`, `insta_reel`, `tiktok_video`, `email_subject`, `email_body`, `podcast_intro`, `call_script`, `carousel_slide`. Открытый список — новый канал = один YAML.
+- **`data/content_forms/`** — 10 YAML нарративных форм: `storytelling`, `case_study`, `tutorial`, `tips_list`, `opinion`, `educational`, `quote_card`, `provocation`, `quiz`, `metaphor_explain`. Открытый список.
+
+### Новые скрипты
+
+- `scripts/classify_concepts_sample.py` — sample test классификации (50 концептов, sync + ThreadPool)
+- `scripts/classify_concepts_full.py` — полная классификация через Anthropic Batch API + state file (idempotent)
+- `scripts/regenerate_voice_doc_v2.py` — voice-doc через Map-Reduce (6 разделов параллельно)
+- `scripts/build_style_artifacts.py` — сборка raw_quotes + lexicon + forbidden_topics (SQL-only)
+
+### Что НЕ построено (следующие задачи)
+
+- **Content engine v0** — генератор постов/email/звонков по layered config. Task #8.
+- **Mini-product proposer** — предлагает варианты мини-продуктов из корпуса. Task #9.
+- **Streamlit UI** для генератора — после v0 движка.
+- **Материалы Оксаны** → её voice-doc → пересборка `joint_product`. Pending от пользователя.
+- **Настоящие посты Анны** → few-shot для `anna_product`. Pending от пользователя.
+- **CRM / leads / sequences** — позже (Layer 3/4 воронки в `tech_spec_marketing_funnel.md`).
+
+---
+
 ## Решения и feedback от пользователя (важно для будущих сессий)
 
 - **Психолога зовут Анна** — не Анастасия, не другие имена. Используется в БД (`therapists.name = 'Анна'`).
+- **Анна работает с Оксаной**, продукт «Академия Супружества» (two-author). Memory `project_anna_oksana_academy.md`.
 - **Никогда не добавлять `Co-Authored-By: Claude` в commit-сообщения.** Только содержательное сообщение.
 - **Не пушить на legal** в обсуждениях.
 - **Таксономия концептов** = 9 типов фиксированных, новых не придумывать.
+- **Никакого транслита** в коде/БД (не `brak` — только `marriage`). Memory `feedback_no_translit.md`.
+- **«Супружество», не «брак»** в русских UI и в контенте. Memory `project_supruzhestvo_terminology.md`.
+- **Credential hygiene**: при получении ключа в чате не использовать, попросить ротировать. Memory `feedback_credential_hygiene.md`.
+- **Антипаттерны языка** в продуктовом контенте: запрещены «женственность», «истинная природа», «наш круг», «гарантия результата» и др. Memory `project_language_antipatterns.md`.
 - Memory с этими и другими решениями: `~/.claude/projects/-Users-irina-bugorkova-Desktop-dev-psy-helper/memory/`.
 
 ---
@@ -282,5 +338,13 @@ python3 scripts/render_html.py docs/architecture.md
 | Полный список концептов по типам | `data/concepts_digest.md` | Обзор всего корпуса |
 | Концепты для встречи с Анной | `data/review_for_meeting.md` (только 2 лекции; нужно перерендерить) | Чекбоксы для разметки |
 | Per-лекция: блоки + концепты | `data/transcripts/<lecture>/digest.md` | Читать как книгу |
-| Voice-document v1 | `data/voice_document/v1_draft.md` | Черновик для ревью Анны |
+| Voice-document v1 (legacy) | `data/voice_document/v1_draft.md` | Старый черновик |
+| **Voice-document v2** (лекторский) | `data/voice_document/v2_draft.md` | Новый, ждёт ревью Анны |
 | Архитектура для Анны | `docs/architecture.md` (+ HTML) | На встречу |
+| Audience Research | `docs/Audience Research.md` | ЦА: сегменты, психотипы, конкуренты |
+| Обзор контент-системы для Анны | `docs/marketing_system_for_anna.md` | Нетехнический |
+| Style artifacts (gitignored) | `data/style/` | raw_quotes, lexicon, forbidden_topics |
+| Audience JSON/YAML (gitignored) | `data/audience/` | Структурированные данные из Audience Research |
+| Voice profiles (gitignored) | `data/voice_profiles/` | 3 YAML профиля голоса |
+| Channels YAML (gitignored) | `data/channels/` | 10 каналов |
+| Content forms YAML (gitignored) | `data/content_forms/` | 10 нарративных форм |
