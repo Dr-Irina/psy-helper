@@ -255,12 +255,13 @@ POSTGRES_DB=psy_helper
 ### Что построено (инфраструктура)
 
 - **БД**: миграция `003_classification_columns.sql` → колонки `concepts.topics[]`, `subtopics[]`, `hunt_stages[]` + GIN-индексы. Все 3919 концептов размечены через Haiku 4.5 + Batch API.
-- **`data/voice_document/v2_draft.md`** — лекторский voice-doc (Sonnet 4.6 + Map-Reduce, 6 разделов). Ждёт ревью Анны.
+- **`data/voice_document/v2_draft.md`** — лекторский voice-doc (Sonnet 4.6 + Map-Reduce, 6 разделов). Ждёт ревью Анны. Используется в `anna_lecture` profile.
+- **`data/voice_document/v2_product_draft.md`** — ПРОДУКТОВАЯ версия voice-doc (на «Вы», без мата, спокойный взрослый). Используется в `anna_product` и `joint_product`. Тоже ждёт ревью.
 - **`data/style/`** — артефакты стиля: `raw_quotes.jsonl`, `lexicon.json`, `forbidden_topics.json` (v2 с antipatterns).
 - **`data/audience/`** — структурированные данные из Audience Research: segments, psycho_types, competitors, gaps, positioning.
 - **`data/voice_profiles/`** — 3 YAML профиля голоса.
-- **`data/channels/`** — 10 YAML каналов: `tg_post`, `tg_story`, `insta_post`, `insta_reel`, `tiktok_video`, `email_subject`, `email_body`, `podcast_intro`, `call_script`, `carousel_slide`. Открытый список — новый канал = один YAML.
-- **`data/content_forms/`** — 10 YAML нарративных форм: `storytelling`, `case_study`, `tutorial`, `tips_list`, `opinion`, `educational`, `quote_card`, `provocation`, `quiz`, `metaphor_explain`. Открытый список.
+- **`data/channels/`** — 10 YAML каналов с `preferred_model` (haiku/sonnet): `tg_post`, `tg_story`, `insta_post`, `insta_reel`, `tiktok_video`, `email_subject`, `email_body`, `podcast_intro`, `call_script`, `carousel_slide`. Открытый список — новый канал = один YAML.
+- **`data/content_forms/`** — 10 YAML нарративных форм с `lexicon_min` (0-2): `storytelling`, `case_study`, `tutorial`, `tips_list`, `opinion`, `educational`, `quote_card`, `provocation`, `quiz`, `metaphor_explain`. Открытый список.
 
 ### Новые скрипты
 

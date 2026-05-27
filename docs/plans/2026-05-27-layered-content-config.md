@@ -1,297 +1,322 @@
-# Plan: гибкая параметризация контент-генератора (Phase 1 — данные)
+# Plan: Phase 2 — Content Engine v0 + Streamlit UI + git-ifying data/configs
+
+> **Updated 2026-05-27 (self-review v2):** добавлены 8 CRITICAL пробелов, 5 HIGH улучшений, исправлены 3 архитектурные ошибки. См. секцию «Self-review: что было пропущено» в конце.
 
 ## Context
 
-После получения **Audience Research** от Анны появились критические новые вводные, которые меняют архитектуру до того, как мы начали писать content engine:
+Phase 1 (инфраструктура layered config) завершена и закоммичена. Готово:
+- 3 voice profiles (`anna_lecture`, `anna_product`, `joint_product` placeholder)
+- 4 audience segments + 4 psycho_types (из Audience Research)
+- 10 channels (включая TikTok, carousel_slide)
+- 10 content forms (включая storytelling)
+- 3919 концептов размечены по 9 топикам + 5 ступеням Ханта (Haiku Batch)
+- Voice-doc v2 (лекторский) сгенерирован
+- Style corpus + lexicon + forbidden_topics v2 (с антипаттернами Audience Research)
 
-1. **Курс «Академия Супружества» — два автора**: Анна + Оксана. Нужен `joint` voice (пока — placeholder, Оксаны материалов нет, придут позже).
-2. **Продуктовый стиль ≠ лекторский.** В лекциях Анна — на «ты», с матом, провокативно. В продуктовом контенте — на «Вы», без мата, спокойно, взрослый тон. Это **два разных голоса**.
-3. **Audience Research даёт 3 новых классификатора контента** (помимо уже сделанных topics + hunt_stages):
-   - `target_segment` (4 сегмента: Усталая жена / На грани / Стелю соломку / Эмиграция)
-   - `target_psycho_type` (4 типа: Аналитик / Тёрпеливая / Импульсивная / По рекомендации)
-   - `target_channel` (TG / IG / email / Reels / подкаст / эфир / звонок)
-4. **Antipatterns языка** из исследования: «женственность», «истинная природа», «гармоничные отношения», «девушка-плюс», «наш круг», «гарантия результата» — должны блокироваться в генерации.
-5. **Главный сегмент v1**: «Усталая жена». **Главный психотип**: «Тёрпеливая». 70% контента — для пары.
-6. Архитектурно сразу делаем **multi-tenant ready**: имя «Анна» нигде не хардкодим, всё параметризовано (для будущих экспертов в фабрике).
+Phase 2 — **Universal Content Engine v0 + UI**:
+- Сборка промтов из 5 слоёв (voice/segment/psycho/channel/form) + параметры
+- Anthropic API + prompt caching + provenance
+- БД для сохранения черновиков (для analytics и UI)
+- CLI + Streamlit UI (Аня может сама нажимать кнопки)
 
-Цель: подготовить полную инфраструктуру конфигурации голоса/аудитории/канала **до** того, как пишем content engine v0, чтобы движок сразу знал про все эти параметры и не пришлось рефакторить.
-
-**Это только Phase 1 (данные).** Content engine v0 (генератор) — отдельная следующая задача.
-
----
-
-## Approach: Universal generator + Layered Configuration
-
-**Главный принцип:** один универсальный generator entry point, который принимает любую комбинацию voice profile + channel/format + audience-параметров. Любой новый тип контента (от SMS до длинного лендинга) добавляется как **один YAML в `data/channels/`** — без изменений в движке.
-
-Каждая генерация = композиция 5 слоёв + параметры:
-
-```
-Layer 1: Voice Profile   КТО говорит   (anna_lecture | anna_product | joint_product | … | custom inline)
-Layer 2: Segment Overlay КОМУ говорим   (1-4: tired_wife | on_edge | planning | emigration | none)
-Layer 3: Psycho Overlay  ЧЕМ зацепить  (1-4: analyst | patient | impulsive | referral | none)
-Layer 4: Channel Overlay ГДЕ публикуем (tg_post | tg_story | insta_post | insta_reel |
-                                        tiktok_video | youtube_short |
-                                        email_body | email_subject | call_script |
-                                        lp_section | lp_hero | faq_item |
-                                        sms | push_notif | ad_copy |
-                                        webinar_pitch | podcast_intro | bio_text |
-                                        carousel_slide | … расширяется свободно)
-Layer 5: Content Form    КАК структурировано (storytelling | case_study | tutorial |
-                                              tips_list | opinion | educational |
-                                              quote_card | provocation | quiz |
-                                              metaphor_explain | …расширяется)
-+ Parameters:            hunt_stage (1-5), topics[], optional subtopic
-+ Optional preset:       именованный набор всех значений (для частых комбинаций)
-+ Optional inline overrides: для one-off случаев, без создания YAML
-```
-
-Layer 4 (ГДЕ) и Layer 5 (КАК) — **ортогональны**: одна и та же история-сторителлинг может быть упакована и в TG-пост, и в TikTok, и в email, и в секцию лендинга. Один и тот же канал поддерживает много форм (TG-пост может быть и сторителлингом, и tips_list).
-
-Hierarchy of overrides: **profile defaults → preset → channel defaults → explicit params → inline overrides**.
-
-Generator API (концепт для Phase 2):
-```python
-generate(
-    voice_profile_slug = "anna_product",     # любой из data/voice_profiles/
-    channel_slug       = "tiktok_video",     # любой из data/channels/
-    content_form_slug  = "storytelling",     # любой из data/content_forms/
-    segment_slug       = "tired_wife",       # optional
-    psycho_type_slug   = "patient",          # optional
-    hunt_stage         = 1,                  # optional
-    topics             = ["marriage"],       # optional
-    topic_hint         = "границы в браке",  # optional
-    inline_overrides   = {                    # optional, для one-off
-        "max_length": 800,
-        "extra_instructions": "сделай 3 варианта заголовка",
-    },
-) → ContentDraft (markdown + provenance + metadata)
-```
-
-**Подчёркиваю:** для нового типа контента → один YAML в `data/channels/`. Если нужен ad-hoc формат — `inline_overrides` без YAML вообще. Один и тот же движок обрабатывает всё.
-
-Хранение конфигов: YAML/JSON в `data/`. В git, легко итерировать. Pydantic dataclass'ы для загрузки (в Phase 2 при написании генератора). БД-расширение — отложено.
+Параллельно — **хозяйственная задача**: расширить `.gitignore`, чтобы конфигурационные артефакты в `data/` попадали в git (whitelist подход). Сейчас всё `data/` игнорируется → при clone на другую машину пропадают voice_profiles, audience, channels, content_forms, lexicon, raw_quotes, voice-doc.
 
 ---
 
-## Конкретные артефакты
+## Approach
 
-### 1. Audience data (распарсить из `docs/Audience Research.md`)
+### Часть A: Git whitelist для data/ (отдельный первый коммит)
 
-```
-data/audience/
-  segments/
-    1_tired_wife.yaml      # Усталая жена — главный сегмент
-    2_on_edge.yaml          # На грани
-    3_planning.yaml         # Стелю соломку
-    4_emigration.yaml       # Эмиграция
-  psycho_types/
-    1_analyst.yaml          # Аналитик
-    2_patient.yaml          # Тёрпеливая — главный тип
-    3_impulsive.yaml        # Импульсивная
-    4_referral.yaml         # По рекомендации
-  competitors.json          # 5 конкурентов с позиционированием
-  market_gaps.json          # незанятые ниши (для suggest_topics в Phase 2)
-  segment_type_matrix.json  # пересечение сегментов и типов с приоритетами
-  positioning.md            # УТП-формула + главные сообщения по сегментам
-```
-
-Поля для сегмента (по структуре Audience Research §2):
-- `slug, name, age_range, marriage_years_range, situation, triggers[]`
-- `pain_phrases[]` — её слова: «он меня не слышит», «живём как соседи»
-- `objections[]`
-- `decision_speed, willing_to_pay_range`
-- `main_channels[], supplemental_channels[], content_formats[], active_hours`
-- `main_message` — слоган-крючок для генератора
-
-Поля для психотипа (§3):
-- `slug, name, motivator, decision_speed`
-- `attracts[], repels[]`
-- `best_formats[], cta_examples[]`
-
-### 2. Voice profiles
+Меняю `.gitignore` с blacklist на whitelist для `data/`. В git идут:
 
 ```
-data/voice_profiles/
-  anna_lecture.yaml      # «ты» + мат точечно — для подкастов/лекций/живых эфиров
-  anna_product.yaml      # «Вы» + без мата + спокойный взрослый — для постов/email/курса
-  joint_product.yaml     # placeholder: anna_product + joint markers + позиционирование Академии
+data/voice_profiles/         # 3 YAML голоса
+data/audience/               # сегменты, психотипы, конкуренты, gaps, positioning
+data/channels/               # 10 YAML каналов
+data/content_forms/          # 10 YAML форм
+data/style/lexicon.json
+data/style/raw_quotes.jsonl  # ← по выбору пользователя, max режим
+data/style/forbidden_topics.json
+data/voice_document/*.md     # черновики voice-doc
 ```
 
-Шаблон YAML:
-```yaml
-slug: anna_product
-name: Анна (продуктовый)
-author: Anna
-form_of_address: "Вы"
-register: продуктовый
-mat_allowed: false
-sources:
-  voice_doc: data/voice_document/v2_draft.md
-  lexicon: data/style/lexicon.json
-  raw_quotes:
-    path: data/style/raw_quotes.jsonl
-    filter:
-      remove_mat: true
-      max_quotes: 8
-antipatterns:
-  - "женственность"
-  - "истинная природа"
-  - "гармоничные отношения"
-  - "девушка-плюс"
-  - "наш круг"
-  - "наши девочки"
-  - "гарантия результата"
-description: >
-  Анна в продуктовом регистре. Спокойный, взрослый тон.
-  Признаёт сложность реальности. Личный, тёплый. Без пафоса.
+Остаются gitignored (большие, генерируемые, операционные):
+```
+data/lectures/               # ~26 GB audio
+data/transcripts/            # ~гигабайты raw.json + промежуточных
+data/concepts_digest.md      # пересобирается из БД
+data/review_for_meeting.md   # пересобирается
+data/classify_state.json     # operational
+data/voice_doc_state.json    # operational
+data/classify_samples/       # тестовые выгрузки
+data/voice_document/_input_for_claude.md  # tmp
+models/                      # HF cache
 ```
 
-`joint_product.yaml` — аналогично, но `author: "Anna + Oksana"`, поле `placeholder: true`, в `description` явно сказано «пока опирается только на материалы Анны + общие правила Академии Супружества; обновится когда Оксана даст материалы».
+**После этого коммита**: clone репо → docker compose up → init_db → можно сразу пытаться генерить (нужны только raw_transcripts/clean_segments/concepts в БД, которые отдельно ingest'ятся из transcripts; либо БД-дамп).
 
-### 3. Channel overlays (ГДЕ) — открытый список
+### Часть B: Content Engine v0
 
-Стартовый набор (10 шт), **список открытый** — любой новый канал добавляется одним YAML без изменений в движке:
+#### B.1. `pyproject.toml` — добавить deps
+- `pydantic>=2.0` (для config dataclasses; не уверена что уже стоит — проверить)
+- `pyyaml>=6.0` (для загрузки YAML конфигов)
 
-```
-data/channels/
-  # Старт (Phase 1)
-  tg_post.yaml          # 600-1200 chars, hook первая строка, CTA опционально
-  tg_story.yaml         # короткое, кружочек-friendly
-  insta_post.yaml       # 1000-2000 chars, эмоциональный заход
-  insta_reel.yaml       # 15-45 sec script: hook + body + CTA
-  tiktok_video.yaml     # 15-60 sec; hook первые 1.5 сек, тренды, разговорный пересказ
-  email_subject.yaml    # 35-60 chars, без клик-бейта
-  email_body.yaml       # 500-1500 chars, persona, conversational
-  podcast_intro.yaml    # ~30 sec spoken
-  call_script.yaml      # 5 min ~600 words, beats структура
-  carousel_slide.yaml   # один слайд карусели (один генерим N раз для full carousel)
+#### B.2. Миграция `db/migrations/004_content_drafts.sql`
 
-  # Понадобятся дальше — каждый добавляется одним YAML
-  # youtube_short.yaml      # шортсы YouTube, аналогично reels/tiktok с поправкой на платформу
-  # youtube_video_long.yaml # сценарий длинного видео 8-15 мин
-  # lp_section.yaml         # секция лендинга
-  # lp_hero.yaml            # hero-блок лендинга
-  # faq_item.yaml           # вопрос/ответ FAQ
-  # webinar_pitch.yaml      # анонс вебинара
-  # webinar_full_script.yaml # сценарий часового вебинара
-  # sms.yaml                # короткие 160 chars
-  # push_notif.yaml         # пуш-уведомление
-  # ad_copy.yaml            # рекламный текст для таргета
-  # bio_text.yaml           # описание для bio в соцсетях
-  # threads_post.yaml       # длинная цепочка в Threads/Twitter
-```
+```sql
+CREATE TABLE IF NOT EXISTS content_drafts (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  therapist_id        UUID NOT NULL REFERENCES therapists(id),    -- multi-tenant (CRITICAL #2)
+  voice_profile_slug  TEXT NOT NULL,
+  channel_slug        TEXT NOT NULL,
+  content_form_slug   TEXT NOT NULL,
+  segment_slug        TEXT,
+  psycho_type_slug    TEXT,
+  hunt_stage          INTEGER,
+  topics              TEXT[],
+  topic_hint          TEXT,
+  content             TEXT NOT NULL,
+  provenance          JSONB,             -- { "c123": concept_id, "s456": segment_id }
+  -- Версионирование промта и конфигурации (CRITICAL #1) — критично для A/B и регрессий
+  prompt_version      TEXT NOT NULL,     -- "v0.1.0" или sha-хеш собранного промта
+  config_snapshot     JSONB NOT NULL,    -- snapshot всех 5 layers + параметров на момент генерации
+  -- Cost tracking (CRITICAL #3)
+  model               TEXT NOT NULL,     -- "claude-sonnet-4-6" | "claude-haiku-4-5"
+  cost_usd            NUMERIC(10, 4),
+  tokens_input        INT,
+  tokens_output       INT,
+  cache_creation_tokens INT,
+  cache_read_tokens   INT,
+  -- PII flag (CRITICAL #5)
+  pii_flags           TEXT[],            -- ["suspicious_name:Маша", "phone:..."] — для review
+  -- Lifecycle
+  status              TEXT NOT NULL DEFAULT 'draft',  -- draft|approved|published|rejected|failed
+  reviewed_by         TEXT,
+  review_notes        TEXT,
+  created_at          TIMESTAMP NOT NULL DEFAULT NOW(),
+  reviewed_at         TIMESTAMP,
+  generation_duration_ms INT,           -- для мониторинга latency
+  failure_reason      TEXT              -- если status='failed'
+);
 
-Поля YAML: `slug, format, max_length, min_length, hook_style, cta_required, voice_form_default, prompt_template_extra`.
-
-Если нужен **one-off** формат — генератор принимает `inline_overrides` напрямую в вызове, без создания YAML.
-
-### 3b. Content forms (КАК) — открытый список
-
-Нарративные/структурные формы контента, ортогональные каналу:
-
-```
-data/content_forms/
-  # Старт (Phase 1)
-  storytelling.yaml       # завязка → конфликт → решение → мораль; есть герой
-  case_study.yaml         # разбор конкретного кейса клиента (анонимизированный!)
-  tutorial.yaml           # пошагово: как сделать Х (шаг 1, 2, 3...)
-  tips_list.yaml          # 3-7 коротких советов/принципов списком
-  opinion.yaml            # резкая позиция автора, аргументация, провокация дискуссии
-  educational.yaml        # объяснение термина/феномена с примерами
-  quote_card.yaml         # одна короткая мощная фраза с минимальным контекстом
-  provocation.yaml        # вопрос-вызов, заставляющий читателя усомниться
-  quiz.yaml               # вопрос с вариантами ответов (для сторис/постов)
-  metaphor_explain.yaml   # объяснение сложного через расширенную метафору
-  
-  # Дальше при необходимости
-  # contrarian.yaml         # «вы все думаете Х, а на самом деле Y»
-  # behind_the_scenes.yaml  # «как это устроено у меня»
-  # before_after.yaml       # клиентка до/после
-  # myth_busting.yaml       # развенчание мифа
-  # personal_story.yaml     # личная история эксперта
+CREATE INDEX IF NOT EXISTS idx_content_drafts_therapist_status
+  ON content_drafts (therapist_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_content_drafts_filter
+  ON content_drafts (voice_profile_slug, channel_slug, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_content_drafts_segment_stage
+  ON content_drafts (segment_slug, hunt_stage);
+-- Для diversity: быстрый поиск past drafts по (channel, segment, topics)
+CREATE INDEX IF NOT EXISTS idx_content_drafts_diversity
+  ON content_drafts (channel_slug, segment_slug, created_at DESC);
 ```
 
-Поля YAML: `slug, name, structure_template, hook_style, requires_hero (bool), example_outline`.
+#### B.3. `psy_helper/content_gen/` модуль
 
-**Combinatorial coverage:** 10 channels × 10 content_forms = 100 базовых комбинаций без написания нового кода — каждая может быть применена к любому segment × psycho_type × hunt_stage × voice_profile. Это та гибкость, которая нужна.
-
-### 4. Forbidden_phrases (расширение существующего файла)
-
-`data/style/forbidden_topics.json` → version 2: добавить секцию `phrases`:
-```json
-{
-  "version": 2,
-  "topics": [...],         // 6 существующих категорий не трогаем
-  "phrases": [             // новое
-    {
-      "id": "fem_esoteric",
-      "label": "Эзотерический женский сленг",
-      "phrases": ["женственность", "истинная природа", "гармоничные отношения",
-                  "женская/мужская энергия", "женская природа"],
-      "applies_to": ["product", "joint_product"],   // в lecture не блокируется
-      "reason": "Отталкивает главный сегмент (Audience Research §1)"
-    },
-    {
-      "id": "sect_tone",
-      "label": "Сектоподобная риторика",
-      "phrases": ["наш круг", "наши девочки", "девушка-плюс", "девушка-минус"],
-      "applies_to": ["all"],
-      "reason": "Audience Research §1, отстройка от конкурентов"
-    },
-    {
-      "id": "guarantee_claims",
-      "label": "Гарантии результата",
-      "phrases": ["гарантия результата", "100% результат", "спасу любой брак", "точно поможет"],
-      "applies_to": ["all"],
-      "reason": "Этика + Audience Research §1"
-    }
-  ]
-}
+```
+psy_helper/content_gen/
+├── __init__.py
+├── config.py           # Pydantic-модели для всех 5 layers + GenerationConfig
+├── loaders.py          # load_voice_profile(slug), load_segment, ...
+│                       # LRU-кэш на process lifetime
+├── retrieval.py        # wrapper над psy_helper/search.py с фильтрами по
+│                       # concepts.topics + concepts.hunt_stages
+├── diversity.py        # NEW (HIGH #11) — anti-similarity к past drafts из content_drafts
+├── prompts.py          # base template + per-form modifiers
+│                       # (АРХ. ошибка C — не один монолитный template)
+├── generator.py        # entry point: generate(config) → ContentDraft
+│                       # + Map-Reduce для каналов с requires_map_reduce=true (CRITICAL #4)
+│                       + streaming support (HIGH #12)
+├── validators.py       # provenance check, forbidden filter, term_replacements
+├── pii.py              # NEW (CRITICAL #5) — regex на known names, phones, emails
+├── cost.py             # NEW (CRITICAL #3) — calculate_cost(usage, model) из Anthropic
+│                       # response.usage с поддержкой cache_creation/cache_read токенов
+├── few_shot.py         # NEW (HIGH #10) — self-improving loop: подмешивает approved
+│                       # драфты из content_drafts как few-shot examples
+├── logging_config.py   # NEW (CRITICAL #8) — structured JSON logging через logging
+└── storage.py          # save_draft / load_draft / update_status (БД)
 ```
 
-### 5. Memory (новые записи)
+**Композиция при генерации:**
+```
+1. Load VoiceProfile (anna_product) → form_of_address, mat_allowed,
+                                       антипаттерны, цитаты, voice-doc
+2. Load Segment (tired_wife) → main_message, pain_phrases, objections
+3. Load PsychoType (patient) → attracts, repels, CTA-стиль
+4. Load Channel (tg_post) → длина, hook_style, CTA_required
+5. Load ContentForm (storytelling) → structure_template, requires_hero
+6. Retrieval: гибридный поиск по corpus с фильтрами
+   topics @> ARRAY[topic] AND :stage = ANY(hunt_stages) AND ts_rank на topic_hint
+   → top-15 concepts + top-5 segments
+7. Build system prompt (со всеми layers + retrieved + lexicon + forbidden)
+   cache_control: ephemeral на stable prefix
+8. Build user prompt (topic_hint или общая тема)
+9. Anthropic API call (Sonnet 4.6, max_tokens по channel.max_length)
+10. Parse response → провести валидацию (provenance + forbidden + replacements)
+11. Save в БД (content_drafts), вернуть ContentDraft
+```
 
-Создать 4 новых файла в `~/.claude/projects/-Users-irina-bugorkova-Desktop-dev-psy-helper/memory/`:
-- `project_anna_oksana_academy.md` — Аня работает с Оксаной, продукт «Академия Супружества»
-- `project_voice_registers.md` — два регистра: лекторский (ты+мат) и продуктовый (Вы+без мата)
-- `project_main_audience.md` — главный сегмент = «Усталая жена», главный тип = «Тёрпеливая», их пара = 70% контента
-- `project_language_antipatterns.md` — список запрещённых слов из Audience Research
+**Структура system prompt** (концепт):
+```
+Ты помогаешь {author} писать {channel.name} в {register} регистре.
 
-Обновить `MEMORY.md` индекс.
+ГОЛОС {voice_profile.name}:
+{voice_profile.description}
+Форма обращения: {form_of_address}
+Mat allowed: {mat_allowed}
 
-### 6. tech_spec_marketing_funnel.md (обновление)
+СТИЛЬ РЕЧИ (сырые цитаты автора):
+{raw_quotes отфильтрованные согласно voice_profile.sources.raw_quotes.filter}
 
-- Расширить §3 (архитектура) — добавить layered config диаграмму (5 layers)
-- Расширить §6 (CRM) — добавить ссылки на segments/psycho_types артефакты
-- Расширить §10 (структура кода) — добавить `data/voice_profiles/`, `data/audience/`, `data/channels/`, `data/content_forms/`, `data/presets/`
-- Добавить §X «Voice profile layers и Audience overlays» — описать как генератор будет компоновать слои (включая TikTok, storytelling, etc.)
-- Дописать в §17 (открытые вопросы) — материалы Оксаны pending
+ФИРМЕННЫЕ ФРАЗЫ (использовать минимум 2):
+{lexicon.questions[:5] + lexicon.metaphors[:5]}
 
-### 7. CLAUDE.md (gateway-документ проекта — критично для не-потери контекста)
+ЗАПРЕЩЕНО:
+{voice_profile.antipatterns + forbidden_topics.phrases где applies_to in [all, register]}
 
-CLAUDE.md загружается автоматически в каждую новую сессию. Сейчас в нём нет упоминания Audience Research, voice registers, layered config — всё это пропадёт между сессиями без явного обновления.
+АУДИТОРИЯ — сегмент «{segment.name}»:
+Ситуация: {segment.situation}
+Их слова о боли: {segment.pain_phrases}
+Возражения: {segment.objections}
+ГЛАВНОЕ СООБЩЕНИЕ: {segment.main_message}
 
-Что добавить в CLAUDE.md:
+ПСИХОТИП «{psycho_type.name}»:
+Мотиватор: {psycho_type.motivator}
+Цепляет: {psycho_type.attracts}
+Отталкивает: {psycho_type.repels}
 
-- Раздел **«Контент-генератор: что построено в инфраструктуре»** — короткий, со ссылками на:
-  - `tech_spec_marketing_funnel.md` (полное ТЗ воронки)
-  - `docs/Audience Research.md` (источник сегментов/типов/конкурентов)
-  - `data/voice_profiles/` (3 профиля голоса)
-  - `data/audience/` (4 сегмента + 4 типа + конкуренты + позиционирование)
-  - `data/channels/` (10 каналов включая TikTok)
-  - `data/content_forms/` (10 форм, включая storytelling)
-  - `data/style/` (lexicon, raw_quotes, forbidden_topics v2)
-  - `data/voice_document/v2_draft.md` (лекторский voice-doc, ждёт ревью Ани)
-- Раздел **«Архитектурные принципы контент-генератора»**:
-  - Layered config: 5 слоёв (voice / segment / psycho_type / channel / content_form) + параметры
-  - Universal generator: один entry point на любой тип контента
-  - Multi-tenant ready: имя «Анна» нигде не хардкодим, всё параметризовано
-  - Два регистра: лекторский (ты+мат) и продуктовый (Вы+без мата)
-  - Anna + Oksana = Академия Супружества (joint voice, Оксанин корпус pending)
-- Расширить раздел **«Решения и feedback от пользователя»** ссылками на новые memory-файлы про антипаттерны, регистры, главный сегмент.
+КАНАЛ: {channel.name}
+Длина: {channel.length.optimal_chars}, max {channel.length.max_chars}
+Hook: {channel.hook_style}
+CTA: {channel.cta_required ? channel.cta_style : "опционально"}
 
-CLAUDE.md обновление = **первый шаг Phase 1**, страховка от потери контекста, если сессия прервётся в середине.
+ФОРМА: {content_form.name}
+Структура: {content_form.structure_template}
+
+МАТЕРИАЛ ИЗ КОРПУСА АНИ (с источниками):
+{retrieved concepts in format: [c123] "name" — description}
+{retrieved segments in format: [s456] from lecture X: summary}
+
+ТРЕБОВАНИЯ:
+- Каждое утверждение → footnote [^c123] (concept) или [^s456] (segment) из материала выше
+- Минимум 2 фирменные фразы из lexicon
+- {form_of_address} обращение строго
+- Без запрещённых фраз
+- НЕ выдумывать факты и формулировки
+
+Верни ТОЛЬКО markdown черновика с footnotes. Без преамбулы.
+```
+
+#### B.4. CLI
+
+**`scripts/generate_content.py`** — генерация одного куска:
+```bash
+docker compose run --rm app python scripts/generate_content.py \
+  --voice anna_product \
+  --channel tg_post \
+  --form storytelling \
+  --segment tired_wife \
+  --psycho-type patient \
+  --hunt-stage 2 \
+  --topic marriage \
+  --hint "границы в браке"
+```
+
+Сохраняет в БД, печатает текст с footnotes + ID черновика для следующего step.
+
+**`scripts/suggest_topics.py`** — предлагает темы:
+```bash
+docker compose run --rm app python scripts/suggest_topics.py \
+  --voice anna_product \
+  --segment tired_wife \
+  --psycho-type patient \
+  --hunt-stage 2 \
+  --limit 10
+```
+
+Выводит топ-10 идей тем (по комбинации частоты концептов в выбранных топиках/ступенях + diversity heuristic).
+
+#### B.5. Streamlit UI (`scripts/streamlit_app.py` — расширение)
+
+**Безопасность (CRITICAL #6, #7):**
+- Password gate в начале приложения — простой env-var `STREAMLIT_PASSWORD`,
+  без него `st.stop()`. Это не enterprise auth, но защита от случайного
+  доступа на localhost / ngrok.
+- Rate limit на генерацию: не более **N=10 генераций / 5 минут** на сессию.
+  Счётчик в `st.session_state`. Превышение → блокирующий warning.
+
+**Новая вкладка «🎨 Генератор»:**
+- Левая колонка: dropdown'ы для voice_profile / channel / content_form /
+  segment / psycho_type / hunt_stage / topic + text input для topic_hint.
+- Кнопка «Сгенерировать» → API call → draft в правой колонке.
+- **Streaming output** (HIGH #12) — текст появляется по мере приёма от
+  Anthropic SDK (не «крутилка» на 30 сек).
+- Footnotes кликабельны → раскрывают исходный concept/segment.
+- **PII warning panel** (CRITICAL #5) — если `pii_flags` непустой,
+  показать сверху draft'a красную плашку «Найдены подозрительные слова:
+  [список]. Проверь вручную.»
+- **Cost panel** — после генерации показывает реальный $ списания
+  + cumulative за сессию.
+- Кнопки: «✓ Одобрить» / «✎ Править» / «🔄 Сгенерировать ещё вариант» / «✗ Отклонить».
+- «Сгенерировать ещё вариант» создаёт новую запись в content_drafts с тем
+  же config — для A/B сравнения (MEDIUM, см. отложенное).
+
+**Новая вкладка «📋 Черновики»:**
+- Таблица с фильтрами (статус / voice / channel / сегмент / дата / therapist).
+- Inline просмотр + смена статуса + комментарии Анны.
+- Показывает $ cost на черновик + cumulative за период.
+- Экспорт в clipboard.
+- Опционально: «🔍 Diff между двумя версиями» — выделить два draft'a → diff.
+
+#### B.6. Архитектурные правки (см. self-review)
+
+**Pre-Phase-2 fixes — нужны до старта движка:**
+
+- **A) Product-version voice-doc на «Вы».** Текущий v2_draft.md написан
+  «от первого лица на ты» (лекторский). Использование его как «семантики»
+  в anna_product → утечка «ты»-формулировок. → перегенерить разделы 1,
+  2, 4, 5 на «Вы» через Sonnet ($0.20). Сохранить как
+  `data/voice_document/v2_product_draft.md`. anna_product.yaml ссылается
+  на эту версию вместо v2_draft.md. Лекторская версия остаётся для
+  anna_lecture.
+
+- **B) `lexicon_min` per content_form.** Добавить в каждый
+  `data/content_forms/*.yaml` поле `lexicon_min: int` —
+  обязательный минимум фирменных фраз. Значения:
+  - quote_card / sms / push_notif / email_subject: `0`
+  - tiktok_video / insta_reel: `1`
+  - остальные: `2`
+  Generator подставляет это значение в промт «использовать минимум
+  {lexicon_min} фирменных фраз».
+
+- **C) Base + per-form prompt templates.** Не один монолитный template.
+  В `prompts.py`:
+  - `BASE_TEMPLATE` — voice / audience / forbidden / retrieved material
+    (одинаков для всех)
+  - `FORM_MODIFIERS` — dict `{form_slug: extra_instructions_text}` с
+    специфичными hint'ами (storytelling: «начни с Setup», quiz: «дай
+    варианты ответов нумерованным списком», и т.д.)
+  - Final prompt = BASE_TEMPLATE + "\n\n" + FORM_MODIFIERS[form_slug].
+
+#### B.7. Model-per-channel (HIGH #9)
+
+Поле `preferred_model` в каждом `channel.yaml`:
+- `claude-haiku-4-5` для: sms, push_notif, email_subject, quote_card,
+  bio_text, tg_story (~5× дешевле, качество сравнимо для коротких)
+- `claude-sonnet-4-6` для: всех остальных (где важна стилистика)
+
+Generator выбирает модель по channel.preferred_model. Overrideable через
+`--model haiku|sonnet` в CLI или inline_overrides.
+
+### Часть C: Smoke test + iterate
+
+После B готовности:
+1. Сгенерить 10 драфтов с разнообразием (3 voice × 4 канала × 4 формы выборочно)
+2. Оценить вручную по 5 метрикам из `tech_spec_marketing_funnel.md` §15
+3. Решить что доработать:
+   - **Если retrieval плох** → добавить reranking (BGE локально или Cohere API)
+   - **Если в драфтах опасные утверждения** → добавить LLM-as-judge перед save
+   - **Если стиль не угадан** → добавить few-shot с настоящими постами Анны (task #3)
+4. Закрыть task #8
 
 ---
 
@@ -299,74 +324,227 @@ CLAUDE.md обновление = **первый шаг Phase 1**, страхов
 
 | Файл | Действие |
 |---|---|
-| `docs/Audience Research.md` | READ ONLY — источник |
-| `data/voice_document/v2_draft.md` | существующий, voice profile ссылается |
-| `data/style/lexicon.json` | существующий, voice profile ссылается |
-| `data/style/raw_quotes.jsonl` | существующий, voice profile фильтрует |
-| `data/style/forbidden_topics.json` | MODIFY → v2 с phrases |
-| `data/audience/**` | CREATE (новая папка, 4+4+3 файла + positioning) |
-| `data/voice_profiles/**` | CREATE (3 YAML) |
-| `data/channels/**` | CREATE (10 YAML — включая tiktok_video) |
-| `data/content_forms/**` | CREATE (10 YAML — storytelling, case_study, и т.д.) |
-| `tech_spec_marketing_funnel.md` | MODIFY |
-| `~/.claude/projects/.../memory/MEMORY.md` + 4 новых memory | CREATE / MODIFY |
+| `.gitignore` | MODIFY — whitelist для data/ конфигов |
+| `pyproject.toml` | MODIFY (+ pydantic, pyyaml если нет) |
+| `db/migrations/004_content_drafts.sql` | CREATE |
+| `psy_helper/content_gen/__init__.py` | CREATE |
+| `psy_helper/content_gen/config.py` | CREATE — Pydantic-модели для всех 5 layers |
+| `psy_helper/content_gen/loaders.py` | CREATE — YAML→Pydantic |
+| `psy_helper/content_gen/retrieval.py` | CREATE — wrapper над search.py с фильтрами |
+| `psy_helper/content_gen/diversity.py` | CREATE — anti-similarity к past drafts (HIGH #11) |
+| `psy_helper/content_gen/prompts.py` | CREATE — base template + per-form modifiers (Арх C) |
+| `psy_helper/content_gen/generator.py` | CREATE — entry point + Map-Reduce (CRITICAL #4) + streaming (HIGH #12) |
+| `psy_helper/content_gen/validators.py` | CREATE — provenance + forbidden + replacements |
+| `psy_helper/content_gen/pii.py` | CREATE — regex/known-names filter (CRITICAL #5) |
+| `psy_helper/content_gen/cost.py` | CREATE — calculate_cost(usage, model) (CRITICAL #3) |
+| `psy_helper/content_gen/few_shot.py` | CREATE — self-improving loop (HIGH #10) |
+| `psy_helper/content_gen/logging_config.py` | CREATE — structured JSON logging (CRITICAL #8) |
+| `psy_helper/content_gen/storage.py` | CREATE — load/save в content_drafts |
+| `data/voice_document/v2_product_draft.md` | CREATE — product-version voice-doc на «Вы» (Арх A) |
+| `data/voice_profiles/anna_product.yaml` | MODIFY — ссылается на v2_product_draft.md |
+| `data/content_forms/*.yaml` | MODIFY — добавить поле `lexicon_min` (Арх B) |
+| `data/channels/*.yaml` | MODIFY — добавить поле `preferred_model` (HIGH #9) |
+| `scripts/generate_content.py` | CREATE — CLI |
+| `scripts/suggest_topics.py` | CREATE — CLI |
+| `scripts/generate_product_voice_doc.py` | CREATE — для одноразовой генерации v2_product_draft.md |
+| `scripts/streamlit_app.py` | MODIFY — +2 вкладки + auth + rate limit + streaming |
+| `.env.example` | MODIFY — добавить `STREAMLIT_PASSWORD` |
+| `tests/` | CREATE — unit tests для loaders + validators (HIGH #13) |
 
-**НЕ затрагиваем:** `db/migrations/`, `psy_helper/`, `scripts/streamlit_app.py`, `pyproject.toml`. Никаких миграций БД и кода в этой Phase 1.
+**Не трогаем:** существующие миграции 001/002/003, существующие скрипты пайплайна транскрипции/embedding/ingest, ratet existing `psy_helper/search.py` и `psy_helper/taxonomy.py`.
 
 ---
 
 ## Verification
 
-После завершения Phase 1:
-
-1. **Структурная целостность YAML/JSON**:
-   ```bash
-   python3 -c "import yaml; import glob; [yaml.safe_load(open(f)) for f in glob.glob('data/voice_profiles/*.yaml') + glob.glob('data/audience/**/*.yaml', recursive=True) + glob.glob('data/channels/*.yaml')]; print('all yaml ok')"
-   ```
-2. **Контентная целостность**: ручная сверка по чек-листу против `docs/Audience Research.md`:
-   - 4 сегмента ✓
-   - 4 психотипа ✓
-   - 5 конкурентов ✓
-   - все pain_phrases / main_message сохранены ✓
-3. **Forbidden_topics v2** грузится: проверить через простой Python `json.load`.
-4. **Memory** видна: `ls ~/.claude/projects/.../memory/ | grep -c .md` ≥ 9 (5 старых + 4 новых).
-5. **tech_spec_marketing_funnel.md** содержит секцию про layered config: `grep "layered" tech_spec_marketing_funnel.md`.
+1. **Git whitelist:** `git status` после первого коммита не показывает diff из `data/voice_profiles/*.yaml`, `data/audience/**/*.yaml`, `data/channels/*.yaml`, `data/content_forms/*.yaml`, `data/style/*.json|jsonl`, `data/voice_document/*.md`. Большие файлы (transcripts/, lectures/) остаются ignored.
+2. **Pydantic load:** `python -c "from psy_helper.content_gen.loaders import load_voice_profile; print(load_voice_profile('anna_product'))"` → возвращает валидный объект, без warning'ов.
+3. **Migration:** `init_db.py` применяет 004, таблица `content_drafts` создаётся.
+4. **CLI smoke test:** `generate_content.py --voice anna_product --channel tg_post --form storytelling --topic marriage` → draft создан в БД, провенансовые footnotes ведут на реальные concept_id, без mat'а, форма обращения «Вы», нет запрещённых фраз.
+5. **CLI suggest_topics:** возвращает 10 различных тем (без повторов) с поправкой на фильтры.
+6. **Streamlit:** новые вкладки доступны, draft генерится через UI, footnotes раскрываются, кнопка «Одобрить» меняет статус в БД.
+7. **Forbidden filter:** попытка `--topic "депрессия"` → блок с reason='diagnoses'.
+8. **Term replacements:** «брак» в LLM-выходе автоматически заменяется на «супружество» (для voice_profile с term_replacements).
 
 ---
 
-## Что НЕ в этой задаче
+## Cost оценка Phase 2
 
-- Content engine v0 (генератор) — следующая задача (task #8), на готовой инфраструктуре
-- Sample generations — туда же
-- Streamlit UI с параметрами — после v0 движка
-- Перенос voice-doc v2 в БД с `is_active` — отложено
-- Сбор материалов Оксаны — pending, отдельная задача
-- Миграция БД для voice_profiles — пока не нужна, YAML достаточно
-- Pydantic dataclass'ы для config — будут в Phase 2 (с генератором, не сейчас)
-
----
-
-## Cost оценка
-
-- Anthropic API: **$0** (никаких LLM-запросов в этой задаче)
-- Claude Code (моя работа): ~$0.5-1.5 overage (несколько Write + Edit + парсинг файла)
+| Что | Стоимость |
+|---|---|
+| Anthropic API: smoke test 10 драфтов | ~$1 (Sonnet + cache) |
+| Дальше в production: 1 пост | ~$0.10 (с кэшем) |
+| Дальше: 1 рилс/тикток | ~$0.05 |
+| Дальше: 1 длинный email | ~$0.15 |
+| Месячный бюджет (50 единиц контента) | ~$5-10 |
+| Claude Code (моя работа) | ~$3-5 overage |
 
 ---
 
-## Implementation order (для Phase 1)
+## Implementation order
 
-**Порядок выбран так, чтобы переживание контекста было максимальным даже при прерывании в середине.** Сначала — самое важное для не-потери: CLAUDE.md, memory, tech_spec. Потом — артефакты.
+**0. Hygiene: git whitelist для data/ (отдельный первый коммит)**
+   - `.gitignore` whitelist → `git add data/...` → commit. Чисто хозяйственный.
 
-1. **CLAUDE.md** — добавить разделы «Контент-генератор: что построено» + «Архитектурные принципы» + ссылки на новые memory. **Это первое — страховка от потери контекста.**
-2. **4 новых memory-файла** + обновить MEMORY.md (Anna+Oksana, voice registers, главный сегмент, antipatterns).
-3. **tech_spec_marketing_funnel.md** — обновить с layered config (5 слоёв), сегментами, content forms.
-4. Распарсить `docs/Audience Research.md` → 4 segments + 4 psycho_types + competitors + gaps + matrix + positioning.
-5. Записать как YAML/JSON в `data/audience/`.
-6. Создать 3 voice profile YAML в `data/voice_profiles/`.
-7. Создать 10 channel overlay YAML в `data/channels/` (включая `tiktok_video.yaml`).
-8. Создать 10 content_form YAML в `data/content_forms/` (включая `storytelling.yaml`).
-9. Обновить `data/style/forbidden_topics.json` → v2 с `phrases` секцией.
-10. Verify (см. секцию выше).
-11. Закрыть task #2/#3? Нет — оставить как pending для Анны/пользователя.
-12. Создать новые задачи в TaskList: «Получить материалы Оксаны» и «Content engine v0 на layered config».
-13. **Опционально:** скопировать сам план из `~/.claude/plans/graceful-mixing-flurry.md` в `docs/plans/2026-05-27-layered-content-config.md` — чтобы он попал в git и пережил сессии (планы в `~/.claude/plans/` локальны и временны).
+**1. Pre-Phase-2 fixes (архитектурные правки, ~30 минут)**
+   - 1a. Обновить все `data/content_forms/*.yaml` — добавить `lexicon_min` (Арх B)
+   - 1b. Обновить все `data/channels/*.yaml` — добавить `preferred_model` (HIGH #9)
+   - 1c. `scripts/generate_product_voice_doc.py` + запустить → `v2_product_draft.md` (Арх A, ~$0.20)
+   - 1d. Обновить `data/voice_profiles/anna_product.yaml` → ссылается на v2_product_draft.md
+   - Commit «pre-Phase-2: product voice-doc, lexicon_min, preferred_model»
+
+**2. Foundation: deps + миграция БД + logging**
+   - `pyproject.toml` (+ pydantic, pyyaml, structlog) + `docker compose build app`
+   - `db/migrations/004_content_drafts.sql` (с therapist_id, prompt_version, config_snapshot, cost fields, pii_flags) + apply
+   - `psy_helper/content_gen/logging_config.py` (CRITICAL #8)
+   - `.env.example` — добавить `STREAMLIT_PASSWORD`
+
+**3. Pure functions (без LLM)**
+   - `config.py` + `loaders.py` — Pydantic + YAML loaders
+   - `cost.py` (CRITICAL #3) — calculate_cost из anthropic usage
+   - `pii.py` (CRITICAL #5) — regex на known names + phones + emails
+   - `validators.py` — provenance + forbidden + replacements
+
+**4. Unit tests (HIGH #13)**
+   - tests/test_loaders.py — все 31 YAML грузятся в Pydantic
+   - tests/test_validators.py — forbidden filter, term replacements, PII detection
+   - tests/test_cost.py — calculate_cost для разных usage сценариев
+   - Запустить: `docker compose run --rm app pytest`
+
+**5. Retrieval + Prompts + Diversity**
+   - `retrieval.py` — wrapper search.py с фильтрами concepts.topics + hunt_stages
+   - `diversity.py` (HIGH #11) — query past drafts из БД, передаём в промт «избегай повторов с этими темами»
+   - `prompts.py` — BASE_TEMPLATE + FORM_MODIFIERS (Арх C)
+
+**6. Generator + Storage**
+   - `storage.py` — save_draft (включая config_snapshot, prompt_version) / load_draft
+   - `generator.py` — главный pipeline:
+     - 6a. Базовый sync вариант
+     - 6b. Streaming variant (HIGH #12)
+     - 6c. Map-Reduce для каналов с requires_map_reduce=true (CRITICAL #4)
+   - `few_shot.py` (HIGH #10) — pull approved drafts из БД, добавляем в промт
+
+**7. CLI**
+   - `scripts/generate_content.py`
+   - `scripts/suggest_topics.py`
+   - Smoke test 1 draft через CLI: anna_product + tg_post + storytelling + tired_wife + patient + hunt_stage=2 + topic=marriage → проверить:
+     - Save в БД успешен
+     - cost_usd > 0
+     - pii_flags пустой (на тесте)
+     - provenance footnotes ведут на реальные concept_id
+     - Текст на «Вы», без мата, без forbidden фраз
+
+**8. Streamlit UI**
+   - Password gate (CRITICAL #6)
+   - Rate limit в session (CRITICAL #7)
+   - Вкладка «🎨 Генератор» со streaming + PII warning + cost panel
+   - Вкладка «📋 Черновики» с фильтрами
+
+**9. Smoke test через UI** → 1 draft, проверить весь UX.
+
+**10. Тестовый прогон 10 драфтов** с разнообразием параметров. Записать subjective и objective метрики.
+
+**11. Оценка с пользователем и Аней** → решить что доработать (reranking? LLM-as-judge? больше few-shot? per-channel модель прокачать?)
+
+**12. Commit Phase 2** — по логическим частям (foundation / pure functions / generator / UI), не одним коммитом.
+
+**13. Закрыть task #8 как completed.**
+
+---
+
+## Что НЕ в Phase 2 (отложено)
+
+### Технические
+- **Reranking** (Cohere/BGE) — если retrieval окажется плох
+- **LLM-as-judge** перед output — если в драфтах опасные утверждения
+- **A/B-тестирование** (MEDIUM #14) — генерация 3 variants одного config'a
+- **Compare side-by-side** в UI (MEDIUM #15)
+- **Persistent cache 1h TTL** Anthropic вместо ephemeral 5-min (MEDIUM #16)
+- **Monitoring dashboard** (Grafana / dbt) — Anthropic balance, latency, cache hit rate
+- **Backup БД** — pg_dump расписание (когда поедем на Hetzner)
+- **Voice TTS** для аудио-постов в её голосе
+
+### Продуктовые
+- **Mini-product proposer** (task #9) — отдельная Phase 3
+- **Material Оксаны → joint_product real assembly** — task #11, pending от пользователя
+- **CRM / leads / sequences** (Layer 3-4 воронки) — позже
+- **Multi-tenant onboarding нового эксперта** — продукт-фаза
+- **Pre-publish to social networks** (Insta/TG API) — позже
+- **TG bot для доставки драфтов Ане** (MEDIUM #17) — без full posting integration, просто «получи в чат, одобри кнопкой»
+- **Webhook / API endpoint** для n8n/Zapier интеграций
+- **Calendar / scheduling** — generation tied to publishing schedule
+- **Анна как операционный пользователь** UI — после её ревью v0 + согласования
+- **Аналитика что конвертит** — после того как контент пойдёт на каналы
+- **Preview как пост в соцсети** (markdown→HTML render для визуала)
+- **Локализация / английский язык** — пока только русский
+
+---
+
+## Безопасный fallback
+
+Если Anthropic API упадёт в момент генерации (rate limit / timeout) — скрипт сохраняет state с failed_at, можно повторить позже. БД-запись помечается `status='failed'`, поле `failure_reason` заполняется (timeout / rate_limit / context_too_long / etc).
+
+Если retrieval ничего не находит (например, новый topic без концептов в корпусе) → возвращаем ошибку «недостаточно материала», без выдумывания.
+
+Если PII filter находит подозрительные имена → draft сохраняется со `status='draft'` + `pii_flags`, но в UI выводится красная плашка «требует ручной проверки».
+
+---
+
+## Self-review: что было пропущено (2026-05-27, v2 плана)
+
+После написания v1 плана сделан критический пересмотр. Нашлось ~25 пробелов. Все CRITICAL и HIGH **уже встроены выше**, MEDIUM/NICE-TO-HAVE — в «Что НЕ в Phase 2». Этот раздел — для справки и для возможного «давайте сделаем X сейчас».
+
+### CRITICAL (встроены в план)
+
+| # | Что | Где в плане |
+|---|---|---|
+| 1 | Версионирование промта (prompt_version + config_snapshot) | B.2 (миграция) |
+| 2 | therapist_id в content_drafts (multi-tenant) | B.2 |
+| 3 | Cost tracking из Anthropic response | B.3 (cost.py), B.2 (поля) |
+| 4 | Map-Reduce для webinar_full / video_long | B.3 (generator.py), step 6c |
+| 5 | PII filter (regex + known names) | B.3 (pii.py), B.2 (pii_flags), UI |
+| 6 | Streamlit auth (password gate) | B.5, .env.example |
+| 7 | Rate limit на UI (10/5min) | B.5 |
+| 8 | Structured logging вместо print | B.3 (logging_config.py) |
+
+### HIGH (встроены)
+
+| # | Что | Где |
+|---|---|---|
+| 9 | Model-per-channel (Haiku для коротких) | B.7, channels yaml |
+| 10 | Self-improving few-shot loop | B.3 (few_shot.py), step 6 |
+| 11 | Diversity-penalty к past drafts | B.3 (diversity.py), step 5 |
+| 12 | Streaming output в Streamlit | B.5, step 6b |
+| 13 | Unit tests для loaders + validators | tests/, step 4 |
+
+### Архитектурные ошибки v1 (исправлены)
+
+| Буква | Что было не так | Как исправлено |
+|---|---|---|
+| A | v2_draft.md (лекторский, на «ты») используется в anna_product | Pre-Phase-2 step 1c: генерим `v2_product_draft.md` на «Вы» |
+| B | «минимум 2 фирменные фразы» — universal, но для quote_card/SMS не подходит | `lexicon_min` в content_form.yaml, B.6/step 1a |
+| C | Один монолитный prompt template | BASE_TEMPLATE + FORM_MODIFIERS, B.6/step 5 |
+
+### MEDIUM / NICE-TO-HAVE (отложены явно)
+
+См. секцию «Что НЕ в Phase 2». Это пункты, до которых дойдём если v0 работает и есть бюджет.
+
+### Что я **продолжаю не учитывать** в плане (известные пробелы)
+
+Эти вещи я знаю что не покрыты, но не считаю критичными для v0. Записываю явно, чтобы не забыть:
+
+- **Audit log** для изменения voice_profile / forbidden — частично решается через git (вот почему data/ в git правильно), но без UI-уровня tracking.
+- **Email/Slack alerting** при ошибках генерации — для prod, не для localhost dev.
+- **Backup БД** — pg_dump расписание, когда поедем на Hetzner.
+- **Per-therapist изоляция конфигов** — сейчас `data/voice_profiles/` общий, для multi-tenant нужно `data/<therapist_slug>/`. Откладываем до второго эксперта.
+- **Versioning voice profiles** через файлы → git уже даёт это (через `git log` и blame).
+- **Regression tests** — snapshot testing для generation. Дорого, отложить.
+- **Template variables в email** (`{first_name}`) — требует CRM, в Phase 2 не нужно.
+- **Calendar integration** — для расписания постов, Phase 3+.
+
+### Что в плане **уязвимо к изменениям требований**
+
+Эти решения сделаны на основе текущего понимания, могут радикально измениться:
+- **Модель Sonnet 4.6 для всего длинного** — если Haiku 4.5 в практике покажет сравнимое качество для постов, можно перевести 80% на Haiku и сэкономить 3-4x.
+- **Streamlit как UI** — если Аня хочет TG-бот вместо веб-приложения, переделаем.
+- **БД для черновиков** — если решим что нужна интеграция с notion / Airtable / sheets, БД станет один из источников, не единственный.
