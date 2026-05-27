@@ -30,3 +30,5 @@ best_content_forms: [educational, opinion, storytelling]
 audience_research_note: |
   Подкасты — главный формат для сегмента «Стелю соломку» (planning).
   Длительность 30-60 минут на основной выпуск; интро — это анонс.
+
+preferred_model: claude-sonnet-4-6

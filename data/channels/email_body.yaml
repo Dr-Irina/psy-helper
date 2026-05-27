@@ -30,3 +30,5 @@ best_content_forms: [storytelling, case_study, opinion, educational]
 audience_research_note: |
   Письма Тёрпеливой — тёплые, без давления. «Если захочется — приходите.»
   Аналитику — содержательно, с конкретными цифрами/фактами.
+
+preferred_model: claude-sonnet-4-6

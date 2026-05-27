@@ -32,3 +32,5 @@ best_content_forms: [case_study, opinion]
 audience_research_note: |
   Звонок — BOFU инструмент. Тон обязательно НЕ менторский, не давящий.
   Признать сложность реальности → конкретная помощь, не «обещание чуда».
+
+preferred_model: claude-sonnet-4-6

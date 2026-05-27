@@ -24,3 +24,5 @@ best_content_forms: [quote_card, provocation, opinion]
 audience_research_note: |
   Для «Тёрпеливой» — короткие тёплые форматы работают лучше длинных.
   Кружочки в Telegram упоминаются как ключевой формат для этого типа.
+
+preferred_model: claude-haiku-4-5

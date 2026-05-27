@@ -30,3 +30,5 @@ best_content_forms: [provocation, tips_list, storytelling, case_study]
 audience_research_note: |
   Reels через VPN — supplemental channel для «Усталой жены».
   Для Тёрпеливой — должно быть тёплое, без давления; для Импульсивной — с накалом.
+
+preferred_model: claude-sonnet-4-6

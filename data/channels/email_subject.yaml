@@ -26,3 +26,5 @@ best_content_forms: [opinion, educational, provocation]
 audience_research_note: |
   Для Тёрпеливой — без давления, без срочности. «Если захочется...».
   Для Аналитика — конкретика и обещание содержательной пользы.
+
+preferred_model: claude-haiku-4-5

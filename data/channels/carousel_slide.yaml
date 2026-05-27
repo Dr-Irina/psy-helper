@@ -32,3 +32,5 @@ audience_research_note: |
   Карусели хорошо работают в Instagram и Telegram (можно как картинки в посте).
   Для генерации полной карусели вызывать generator с этим каналом N раз
   и параметром slot_number в inline_overrides.
+
+preferred_model: claude-haiku-4-5

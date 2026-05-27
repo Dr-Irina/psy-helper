@@ -28,3 +28,5 @@ best_content_forms: [storytelling, case_study, educational]
 audience_research_note: |
   Insta-посты длиннее TG, требуют сильного зацепа в первых 100 символах
   (до «...читать дальше»). Для Аналитика — подходит формат лонгрид.
+
+preferred_model: claude-sonnet-4-6

@@ -16,7 +16,7 @@ use_for:
   - content_for_branded_academy_courses
 
 sources:
-  voice_doc: data/voice_document/v2_draft.md
+  voice_doc: data/voice_document/v2_product_draft.md   # продуктовая версия (на «Вы», без мата)
   lexicon: data/style/lexicon.json
   raw_quotes:
     path: data/style/raw_quotes.jsonl

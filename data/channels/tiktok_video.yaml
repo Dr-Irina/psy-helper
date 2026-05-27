@@ -35,3 +35,5 @@ audience_research_note: |
 
   ВАЖНО: для psy-helper-продуктового стиля можно отступить от «Вы» на «ты» —
   это плотформенное conventions, не нарушение продуктового регистра.
+
+preferred_model: claude-sonnet-4-6

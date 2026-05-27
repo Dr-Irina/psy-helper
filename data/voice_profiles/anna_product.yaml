@@ -26,7 +26,7 @@ use_for:
   - carousel_slide
 
 sources:
-  voice_doc: data/voice_document/v2_draft.md   # лекторский — для семантики (принципы / red lines / техники), не стиля
+  voice_doc: data/voice_document/v2_product_draft.md   # ПРОДУКТОВАЯ версия voice-doc (на «Вы», без мата)
   lexicon: data/style/lexicon.json
   raw_quotes:
     path: data/style/raw_quotes.jsonl

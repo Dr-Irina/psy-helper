@@ -19,3 +19,5 @@ notes:
   - Типичный формат для Анны — термин + бытовая расшифровка
     (см. data/voice_document/v2_draft.md §3 «Профессиональные термины»)
   - Подходит для введения концептов из data/concepts (через retrieval по topic)
+
+lexicon_min: 2
