@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY pyproject.toml ./
-RUN pip install --upgrade pip && pip install .
+RUN pip install --upgrade pip && pip install ".[dev]"
 
 COPY . .
 
