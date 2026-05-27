@@ -1,0 +1,34 @@
+slug: referral
+name: По рекомендации (Социальная)
+
+motivator: социальная безопасность, проверенность
+decision_speed: "после рекомендации — быстро; без — никак"
+decision_style: социальная проверенность
+
+attracts:
+  - упоминание Вас в её среде
+  - репост подруги
+  - реальные отзывы выпускниц
+
+repels:
+  - отсутствие отзывов
+  - накрученные отзывы
+  - скандалы
+
+best_formats:
+  - testimonials_video_text
+  - cases_before_after
+  - client_stories
+
+cta_examples:
+  - 'Хотите поговорить с выпускницей? Соединю напрямую'
+
+main_segments: [emigration]
+key_argument: "«Вот реальные люди, которые прошли»"
+
+availability:
+  notes: |
+    Недоступен на первом потоке (нет выпускниц).
+    Стратегически важен на втором-третьем потоке, когда накопятся отзывы и кейсы.
+
+source_section: "docs/Audience Research.md §3 Тип 4"

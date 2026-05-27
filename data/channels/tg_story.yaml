@@ -1,0 +1,26 @@
+slug: tg_story
+name: Telegram-сториз / кружочек
+format: short_message
+channel_name: Telegram (личный канал)
+
+length:
+  min_chars: 100
+  optimal_chars: 250
+  max_chars: 500
+
+hook_style: одна сильная мысль или вопрос
+cta_required: false
+voice_form_default: Вы
+
+structure_hint: |
+  Одна мысль, одна эмоция. Без структуры «введение-раскрытие».
+  Личное, как голосовое сообщение от близкого человека.
+
+best_psycho_types: [patient, impulsive]
+best_segments: [tired_wife, on_edge]
+best_hunt_stages: [1, 2]
+best_content_forms: [quote_card, provocation, opinion]
+
+audience_research_note: |
+  Для «Тёрпеливой» — короткие тёплые форматы работают лучше длинных.
+  Кружочки в Telegram упоминаются как ключевой формат для этого типа.

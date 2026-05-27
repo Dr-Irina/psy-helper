@@ -1,0 +1,30 @@
+slug: insta_post
+name: Instagram-пост
+format: text_post_with_visual
+channel_name: Instagram (feed)
+
+length:
+  min_chars: 1000
+  optimal_chars: 1500
+  max_chars: 2200   # лимит Instagram caption
+
+hook_style: эмоциональный заход в первой строке + первый абзац должен зацепить до «...читать дальше»
+cta_required: true
+cta_style: вопрос / приглашение в комментарии или личку
+voice_form_default: Вы
+
+structure_hint: |
+  Hook → 1 абзац (виден до «читать дальше») → раскрытие 3-5 абзацев →
+  одна осевая идея → CTA-вопрос.
+
+  Эмодзи допустимы умеренно (2-5 на пост).
+  Без переноса параграфов точкой — используй пустые строки.
+
+best_psycho_types: [analyst, patient]
+best_segments: [tired_wife, planning]
+best_hunt_stages: [2, 3]
+best_content_forms: [storytelling, case_study, educational]
+
+audience_research_note: |
+  Insta-посты длиннее TG, требуют сильного зацепа в первых 100 символах
+  (до «...читать дальше»). Для Аналитика — подходит формат лонгрид.

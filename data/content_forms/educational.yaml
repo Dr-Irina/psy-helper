@@ -1,0 +1,21 @@
+slug: educational
+name: Образовательный пост / объяснение
+
+structure_template: |
+  Понятие или феномен (название)
+  → Определение (бытовое + точное)
+  → Пример из жизни (как это выглядит)
+  → Что с этим делать / как замечать у себя
+
+hook_style: |
+  "Что такое..." / "Почему..." / "Когда говорят X, имеют в виду..."
+requires_hero: false
+
+best_channels: [tg_post, insta_post, email_body, podcast_intro, carousel_slide]
+best_psycho_types: [analyst, patient]
+best_hunt_stages: [2, 3]
+
+notes:
+  - Типичный формат для Анны — термин + бытовая расшифровка
+    (см. data/voice_document/v2_draft.md §3 «Профессиональные термины»)
+  - Подходит для введения концептов из data/concepts (через retrieval по topic)

@@ -1,0 +1,32 @@
+slug: podcast_intro
+name: Подкаст — интро (анонс выпуска)
+format: spoken_script
+channel_name: Подкаст / YouTube
+
+length:
+  duration_seconds_min: 20
+  duration_seconds_optimal: 30
+  duration_seconds_max: 60
+  words_approximate: 50-150
+
+hook_style: вопрос-затравка про тему выпуска / парадокс / личный заход
+cta_required: optional
+cta_style: подписка / отзыв / упоминание партнёров
+voice_form_default: Вы   # подкаст продуктовый
+
+structure_hint: |
+  HOOK (5-10 sec): что услышит слушатель / зачем это ему
+  TEASER (10-30 sec): 2-3 главных вопроса выпуска
+  CTA (опционально): подписка / отзыв
+
+  Записать так, чтобы звучало естественно при чтении вслух.
+  Без сложных синтаксических конструкций — читается как живая речь.
+
+best_psycho_types: [analyst, patient]
+best_segments: [planning, tired_wife, emigration]
+best_hunt_stages: [2, 3]
+best_content_forms: [educational, opinion, storytelling]
+
+audience_research_note: |
+  Подкасты — главный формат для сегмента «Стелю соломку» (planning).
+  Длительность 30-60 минут на основной выпуск; интро — это анонс.

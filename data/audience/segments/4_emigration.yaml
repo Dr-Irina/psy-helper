@@ -1,0 +1,59 @@
+slug: emigration
+name: Брак переехал. Всё перестраивается
+priority: 3  # УТП-линия, Анин личный опыт (15 лет эмиграции)
+age_range: [30, 48]
+marriage_years_range: null
+has_children: maybe
+emigration_duration_range_months: [6, 60]
+spouse_state: пара под двойным стрессом
+situation: |
+  В эмиграции 6 мес - 5 лет, переехала с мужем.
+  Пара под двойным стрессом (адаптация + отношения).
+
+triggers:
+  - первый кризис через 6-18 месяцев после переезда
+  - разный темп адаптации супругов
+
+pain_phrases:
+  - "после переезда всё разрушилось"
+  - "здесь не на кого опереться"
+  - "он стал другим"
+  - "я не та женщина, что была дома"
+
+objections:
+  - "сейчас не до курсов — выживаем"
+  - "это про переезд, а не про брак"
+
+decision_speed: переменная (зависит от страны)
+willing_to_pay_range_rub: [40000, 80000]
+decision_factors:
+  - "через эмигрантские чаты"
+  - "рекомендации"
+  - "поиск «русскоязычный психолог в моей стране»"
+
+main_channels:
+  - telegram_chats_relocants_by_country
+supplemental_channels:
+  - vc_ru
+  - daily_afisha
+  - emigrant_forums
+
+content_formats_that_work:
+  - personal_emigration_stories
+  - posts_marked_pro_emigration
+
+active_hours:
+  any_day: "вечер по местному времени"
+
+main_message: |
+  Переезд проверяет брак как никакой другой кризис.
+  У меня 15 лет эмиграции — знаю, как пара остаётся вместе.
+
+main_psycho_types: [referral, analyst]
+primary_psycho_type: referral
+
+strategic_note: |
+  Пустая ниша на рынке. Использовать как УТП и контентную линию.
+  Анина личная история (15 лет эмиграции) — главный аргумент.
+
+source_section: "docs/Audience Research.md §2 Сегмент 4"

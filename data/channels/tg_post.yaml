@@ -1,0 +1,29 @@
+slug: tg_post
+name: Telegram-пост
+format: text_post
+channel_name: Telegram (личный канал психолога)
+
+length:
+  min_chars: 400
+  optimal_chars: 700
+  max_chars: 1200
+
+hook_style: первая строка должна цеплять без cliffhanger-обмана
+cta_required: false
+cta_style: мягкий, без давления, опциональный
+voice_form_default: Вы
+
+structure_hint: |
+  Hook (1-2 строки) → раскрытие 2-3 абзаца → опционально CTA.
+  Без emoji-перегруза. Один-два emoji допустимы.
+
+best_psycho_types: [patient, analyst]
+best_segments: [tired_wife, planning]
+best_hunt_stages: [2, 3]
+best_content_forms: [storytelling, opinion, educational, tips_list]
+
+audience_research_note: |
+  Главная площадка для сегмента «Усталая жена». Окно активности:
+  будни 21:00-23:30, выходные 8:00-10:00.
+
+  Формат «кейс 700-1200 знаков» — один из лучше работающих.

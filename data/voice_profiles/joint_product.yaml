@@ -1,0 +1,71 @@
+slug: joint_product
+name: Анна + Оксана (Академия Супружества, joint продуктовый)
+author: "Anna + Oksana"
+form_of_address: Вы
+register: продуктовый
+placeholder: true   # пока опирается только на Анин корпус — материалов Оксаны нет
+
+use_for:
+  - tg_post                              # посты от лица Академии
+  - insta_post
+  - email_body
+  - lp_section
+  - lp_hero
+  - webinar_pitch
+  - carousel_slide
+  - content_for_branded_academy_courses
+
+sources:
+  voice_doc: data/voice_document/v2_draft.md
+  lexicon: data/style/lexicon.json
+  raw_quotes:
+    path: data/style/raw_quotes.jsonl
+    filter:
+      remove_mat: true
+      max_quotes: 6                      # меньше цитат Анны — оставляем место под joint markers
+  audience_positioning: data/audience/positioning.md
+  market_gaps: data/audience/market_gaps.json
+
+joint_markers:
+  # Как должна звучать we-форма
+  - "мы как два психотерапевта"
+  - "наш совместный подход"
+  - "и Анна, и Оксана работают..."
+  - использовать «мы», не «я-Анна», когда речь про продукт/курс
+  - личная история Анны (17 лет в браке, 15 лет эмиграции, дети) — её отдельный аргумент, не joint
+  - УТП формула «два взгляда» из Audience Research — главный отличительный признак
+
+antipatterns:
+  # Все из anna_product + особое внимание сектоподобности
+  # (joint не должен звучать как «наш кружок»)
+  - "женственность"
+  - "женская природа"
+  - "истинная природа"
+  - "гармоничные отношения"
+  - "девушка-плюс"
+  - "девушка-минус"
+  - "наш круг"
+  - "наши девочки"
+  - "гарантия результата"
+  - "100% результат"
+  - "спасу любой брак"
+  - "точно поможет"
+  - "волшебная трансформация"
+  - "делай как я"
+
+term_replacements:
+  "брак": "супружество"
+
+description: |
+  Совместный продуктовый голос Академии Супружества (Анна + Оксана).
+
+  ВНИМАНИЕ: сейчас это PLACEHOLDER — опирается только на материалы Анны +
+  общие правила Академии из Audience Research. Когда Оксана даст материалы
+  (лекции / эфиры / посты) — будет сгенерирован её voice-doc, и joint
+  пересоберётся с реальным микшированием двух голосов.
+
+  УТП-формула: «психотерапевтическое качество + взрослый тон +
+  два взгляда (Анна и Оксана) + работа с реальностью, а не с идеалом».
+
+reference_audience_research: docs/Audience Research.md
+pending_oksana_corpus: true   # критический флаг — модель должна осторожнее с «мы»

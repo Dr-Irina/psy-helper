@@ -1,0 +1,20 @@
+slug: metaphor_explain
+name: Объяснение через метафору
+
+structure_template: |
+  Метафора (яркий образ)
+  → Что она объясняет (концепт)
+  → Применение к супружеству / отношениям / себе
+
+hook_style: |
+  "Представьте..." / "Это как..." / "Знаете, чем X похож на Y?"
+requires_hero: false
+
+best_channels: [tg_post, insta_post, email_body, podcast_intro, tiktok_video]
+best_psycho_types: [patient, analyst]
+best_hunt_stages: [2, 3]
+
+notes:
+  - Использовать metaphors из data/style/lexicon.json — у Анны их 250+
+  - "Примеры: «Из брака в супружество», «Замученный альтруист», «Корона Бога», «Турбо-баба-яга», «Мозг — ленивая сука»"
+  - Метафора — сильный приём Анны (см. v2_draft.md §4 «Фирменные формулировки»)

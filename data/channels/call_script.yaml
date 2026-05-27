@@ -1,0 +1,34 @@
+slug: call_script
+name: Скрипт телефонного / video-звонка
+format: spoken_script_with_beats
+channel_name: Телефонный звонок / Zoom-discovery-call
+
+length:
+  duration_minutes_optimal: 5
+  words_approximate: 500-700
+
+hook_style: тёплое приветствие + контекст «откуда я знаю про вашу ситуацию»
+cta_required: true
+cta_style: договориться о следующем шаге (демо / бесплатная встреча / получение материала)
+voice_form_default: Вы
+
+structure_hint: |
+  BEAT 1 — Приветствие + контекст (30 sec)
+  BEAT 2 — Вопрос / проверка боли клиента (60 sec, открытый вопрос)
+  BEAT 3 — Признание (validation) + связь с методом (60 sec)
+  BEAT 4 — Предложение конкретной помощи (60 sec)
+  BEAT 5 — CTA + следующий шаг (30 sec)
+  TOTAL ~5 минут
+
+  Не читать дословно — это опорный скрипт для оператора-помощника или для Анны.
+  Должны быть варианты ответа на типовые возражения сегмента
+  (см. data/audience/segments/*.yaml поле objections).
+
+best_psycho_types: [referral, patient, analyst]
+best_segments: [tired_wife, planning, emigration, on_edge]
+best_hunt_stages: [4, 5]
+best_content_forms: [case_study, opinion]
+
+audience_research_note: |
+  Звонок — BOFU инструмент. Тон обязательно НЕ менторский, не давящий.
+  Признать сложность реальности → конкретная помощь, не «обещание чуда».

@@ -1,0 +1,20 @@
+slug: tips_list
+name: Список советов / тезисов
+
+structure_template: |
+  Hook (контекст: зачем нужны эти N тезисов)
+  → N коротких тезисов (3-7 штук; каждый = одна мысль)
+  → Опциональный вывод / следующий шаг
+
+hook_style: |
+  "N признаков что..." / "N вещей которые..." / "Если вы..."
+requires_hero: false
+
+best_channels: [tg_post, insta_post, insta_reel, tiktok_video, carousel_slide]
+best_psycho_types: [analyst, patient, impulsive]
+best_hunt_stages: [1, 2, 3]
+
+notes:
+  - Универсальный формат, работает в большинстве каналов
+  - Для Reels/TikTok — лимит 3-5 пунктов, чтобы успеть произнести
+  - Для карусели — N пунктов = N слайдов (плюс hook-слайд и CTA-слайд)

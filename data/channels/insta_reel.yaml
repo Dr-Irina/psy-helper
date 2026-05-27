@@ -1,0 +1,32 @@
+slug: insta_reel
+name: Instagram Reels (сценарий)
+format: short_video_script
+channel_name: Instagram Reels
+
+length:
+  duration_seconds_min: 15
+  duration_seconds_optimal: 30
+  duration_seconds_max: 45
+  words_approximate: 60-130
+
+hook_style: первые 1.5-3 секунды решают всё; вопрос, парадокс, шокирующее утверждение
+cta_required: true
+cta_style: подписаться / в комментарии / в Direct
+voice_form_default: Вы
+
+structure_hint: |
+  HOOK (0-3 sec): "А вы замечаете, что..." / "Не делайте этого..." / "3 вещи, которые..."
+  BODY (3-30 sec): одна мысль / 3 пункта / разбор кейса
+  CTA (последние 2-3 sec): подписка, комментарий, переход
+
+  Текст для озвучки + опционально подписи на экране (subtitles).
+  Лимит на словах — реально успеть произнести.
+
+best_psycho_types: [impulsive, patient]
+best_segments: [tired_wife, on_edge]
+best_hunt_stages: [1, 2]
+best_content_forms: [provocation, tips_list, storytelling, case_study]
+
+audience_research_note: |
+  Reels через VPN — supplemental channel для «Усталой жены».
+  Для Тёрпеливой — должно быть тёплое, без давления; для Импульсивной — с накалом.

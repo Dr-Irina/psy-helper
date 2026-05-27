@@ -1,0 +1,22 @@
+slug: tutorial
+name: Туториал / пошаговое объяснение
+
+structure_template: |
+  Что получим в итоге (outcome)
+  → Шаг 1: что делать, почему
+  → Шаг 2: ...
+  → Шаг N: ...
+  → Как проверить что работает / что дальше
+
+hook_style: |
+  "Как [сделать X] за [N шагов]" / "Что делать, если..."
+requires_hero: false
+
+best_channels: [tg_post, insta_post, email_body, carousel_slide, podcast_intro]
+best_psycho_types: [analyst]
+best_hunt_stages: [2, 3]
+
+notes:
+  - Аналитик любит чёткую структуру и прозрачность
+  - Для Тёрпеливой — слишком формально, не использовать как основной формат для неё
+  - Для Импульсивной — наоборот, слишком длинно

@@ -1,0 +1,32 @@
+slug: email_body
+name: Email — тело письма
+format: text_email
+channel_name: Email-рассылка
+
+length:
+  min_chars: 500
+  optimal_chars: 1000
+  max_chars: 1500
+
+hook_style: |
+  Личное обращение в первой строке («Привет, [имя]»).
+  Первый абзац — конкретная мысль / опыт / наблюдение, не маркетинговая преамбула.
+cta_required: true
+cta_style: одна явная просьба или приглашение (не серия CTA)
+voice_form_default: Вы
+
+structure_hint: |
+  Привет → личный заход (наблюдение / история) → раскрытие мысли →
+  один конкретный CTA (ссылка, ответ на вопрос, регистрация).
+
+  Тон — как личное письмо подруге-эксперту, не корпоративный broadcast.
+  P.S. в конце разрешён для второго мягкого CTA.
+
+best_psycho_types: [patient, analyst]
+best_segments: [tired_wife, planning, emigration]
+best_hunt_stages: [2, 3, 4]
+best_content_forms: [storytelling, case_study, opinion, educational]
+
+audience_research_note: |
+  Письма Тёрпеливой — тёплые, без давления. «Если захочется — приходите.»
+  Аналитику — содержательно, с конкретными цифрами/фактами.

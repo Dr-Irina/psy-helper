@@ -1,0 +1,28 @@
+slug: email_subject
+name: Email — тема письма
+format: subject_line
+channel_name: Email-рассылка
+
+length:
+  min_chars: 25
+  optimal_chars: 45
+  max_chars: 60
+
+hook_style: |
+  Не кликбейт. Должна точно отражать содержание письма.
+  Лучшие приёмы: вопрос, конкретная цифра, противопоставление.
+cta_required: false   # сама тема — это и есть CTA
+voice_form_default: Вы
+
+structure_hint: |
+  Без emoji, без CAPS, без восклицательных знаков.
+  Конкретно, по делу. Тон — спокойный, не «срочно!».
+
+best_psycho_types: [patient, analyst]
+best_segments: [tired_wife, planning, emigration]
+best_hunt_stages: [2, 3, 4]
+best_content_forms: [opinion, educational, provocation]
+
+audience_research_note: |
+  Для Тёрпеливой — без давления, без срочности. «Если захочется...».
+  Для Аналитика — конкретика и обещание содержательной пользы.

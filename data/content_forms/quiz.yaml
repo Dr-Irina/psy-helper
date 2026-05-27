@@ -1,0 +1,21 @@
+slug: quiz
+name: Тест / опросник
+
+structure_template: |
+  Вопрос (один или серия)
+  → Варианты ответов (2-4)
+  → Что каждый ответ значит / куда ведёт
+
+hook_style: |
+  "Угадайте..." / "Какой из этих вариантов вам ближе?"
+requires_hero: false
+
+best_channels: [insta_post, tg_story, lp_section]
+best_psycho_types: [patient, impulsive]
+best_hunt_stages: [1, 2]
+
+notes:
+  - Можно использовать для mini-consult (см. tech_spec_marketing_funnel.md §6.3)
+  - Полный тест-профайлер = 4-7 вопросов в последовательности
+  - В сторис — короткий poll (1 вопрос); в посте — большой тест с трактовкой
+  - НЕ использовать для диагностики (диагнозы в forbidden_topics)

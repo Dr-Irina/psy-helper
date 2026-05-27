@@ -1,0 +1,21 @@
+slug: opinion
+name: Авторская позиция / мнение
+
+structure_template: |
+  Тезис (резкая или непопулярная позиция)
+  → Аргументация (2-3 пункта)
+  → Возражения и ответы (опционально)
+  → Усиление позиции / призыв задуматься
+
+hook_style: |
+  "Я считаю..." / "На мой взгляд..." / "Меня всегда удивляет когда..."
+requires_hero: false
+
+best_channels: [tg_post, insta_post, email_body, podcast_intro]
+best_psycho_types: [analyst, patient]
+best_hunt_stages: [2, 3]
+
+notes:
+  - В лекторском регистре (anna_lecture) — позиция может быть резче
+  - В продуктовом (anna_product / joint_product) — без чрезмерной провокации, тон взрослый
+  - НЕ использовать критику конкретных конкурентов в публичном поле (Audience Research §2)

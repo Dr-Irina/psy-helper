@@ -1,0 +1,37 @@
+slug: tiktok_video
+name: TikTok (сценарий короткого видео)
+format: short_video_script
+channel_name: TikTok
+
+length:
+  duration_seconds_min: 15
+  duration_seconds_optimal: 45
+  duration_seconds_max: 60
+  words_approximate: 70-160
+
+hook_style: |
+  Первые 1.5 секунды критичны (TikTok-алгоритм быстрее отбраковывает).
+  Вопрос с накалом / парадокс / прямой адрес «Если ты... — это видео для тебя».
+cta_required: optional
+cta_style: подписка / комментарий / дуэт / сохранить
+voice_form_default: ты   # TikTok — менее формальная площадка; можно «ты» даже в продуктовом регистре
+
+structure_hint: |
+  HOOK (0-1.5 sec): прямое попадание в боль / парадокс / открытая петля
+  BODY (1.5-50 sec): одна мысль; быстрый темп; разговорный пересказ
+  PAYOFF: конкретный insight или CTA
+
+  TikTok-стиль: больше разговорности и интимности, чем в Reels.
+  Опционально: pattern interrupts, кат-сцены, элементы trend audio.
+
+best_psycho_types: [impulsive, patient]
+best_segments: [tired_wife, on_edge, planning]
+best_hunt_stages: [1, 2]
+best_content_forms: [provocation, storytelling, opinion, metaphor_explain]
+
+audience_research_note: |
+  TikTok в Audience Research напрямую не упомянут — площадка отдельно от
+  Reels. Аудитория моложе и более «холодная»; работает на верхушку воронки.
+
+  ВАЖНО: для psy-helper-продуктового стиля можно отступить от «Вы» на «ты» —
+  это плотформенное conventions, не нарушение продуктового регистра.

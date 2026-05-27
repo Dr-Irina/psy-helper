@@ -1,0 +1,34 @@
+slug: carousel_slide
+name: Слайд карусели (Instagram / Telegram)
+format: single_slide_text
+channel_name: Instagram / Telegram (карусель)
+
+length:
+  min_chars: 80
+  optimal_chars: 180
+  max_chars: 300   # помещается на один экран
+generates_n_times: true   # для полной карусели генерим этот канал N раз с разными slot_number
+
+hook_style: каждый слайд — одна мысль; первый = hook (зацеп), последний = CTA
+cta_required: only_on_last_slide
+voice_form_default: Вы
+
+structure_hint: |
+  Один слайд = одна законченная мысль (для slot_number 1..N-1) или CTA (slot_number = N).
+
+  Slot 1 (Hook):     "5 признаков что у вас не конфликт, а ссора"
+  Slot 2..N-1 (Body): по одному признаку / шагу / тезису на слайд
+  Slot N (CTA):       "Узнать больше / Прийти на встречу / Сохранить в избранное"
+
+  Текст короткий, читается за 3-5 секунд. Контраст с предыдущим слайдом.
+  Визуальная часть генерируется отдельно (Figma/Canva).
+
+best_psycho_types: [patient, analyst, impulsive]
+best_segments: [tired_wife, planning]
+best_hunt_stages: [1, 2, 3]
+best_content_forms: [tips_list, educational, provocation]
+
+audience_research_note: |
+  Карусели хорошо работают в Instagram и Telegram (можно как картинки в посте).
+  Для генерации полной карусели вызывать generator с этим каналом N раз
+  и параметром slot_number в inline_overrides.

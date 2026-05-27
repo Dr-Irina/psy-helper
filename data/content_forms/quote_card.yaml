@@ -1,0 +1,19 @@
+slug: quote_card
+name: Карточка с цитатой
+
+structure_template: |
+  Одна короткая мощная фраза (вырванная из лекции или сформулированная заново)
+  → Опциональный 1-2 предложения контекста
+
+hook_style: сама цитата — она и есть hook
+requires_hero: false
+
+best_channels: [insta_post, tg_story, tg_post, carousel_slide]
+best_psycho_types: [patient, impulsive]
+best_hunt_stages: [1, 2]
+
+notes:
+  - Идеально для использования lexicon (фирменные фразы Анны)
+  - Особенно metaphors — у Анны их 250+ в data/style/lexicon.json
+  - Короткое, эмоциональное, цепляет
+  - Визуальная часть (картинка) генерируется отдельно

@@ -1,0 +1,68 @@
+slug: anna_product
+name: Анна (продуктовый регистр)
+author: Anna
+form_of_address: Вы
+register: продуктовый
+
+mat_allowed: false
+provocation_allowed: low
+
+use_for:
+  - tg_post
+  - tg_story
+  - insta_post
+  - insta_reel
+  - tiktok_video
+  - email_subject
+  - email_body
+  - call_script
+  - lp_section
+  - lp_hero
+  - faq_item
+  - sms
+  - push_notif
+  - ad_copy
+  - bio_text
+  - carousel_slide
+
+sources:
+  voice_doc: data/voice_document/v2_draft.md   # лекторский — для семантики (принципы / red lines / техники), не стиля
+  lexicon: data/style/lexicon.json
+  raw_quotes:
+    path: data/style/raw_quotes.jsonl
+    filter:
+      remove_mat: true              # фильтр в runtime
+      max_quotes: 8
+
+antipatterns:
+  # Из Audience Research §1 «Возможности для отстройки»
+  - "женственность"
+  - "женская природа"
+  - "мужская природа"
+  - "истинная природа"
+  - "гармоничные отношения"
+  - "девушка-плюс"
+  - "девушка-минус"
+  - "наш круг"
+  - "наши девочки"
+  - "гарантия результата"
+  - "100% результат"
+  - "спасу любой брак"
+  - "точно поможет"
+  - "волшебная трансформация"
+  - "делай как я"
+
+term_replacements:
+  "брак": "супружество"         # Анино терминологическое предпочтение
+  "гармония": "реальность"
+  "истинная": null              # удалить
+
+description: |
+  Анна в продуктовом регистре. Спокойный, взрослый тон, без пафоса.
+  Признаёт сложность реальности. Личный, тёплый. На «Вы».
+  Не сектоподобный, не менторский, не сахарный.
+
+  Подходит для всех типов продуктового контента — посты, рассылки, лендинги,
+  карусели, рилсы, TikTok, скрипты звонков, реклама.
+
+reference_audience_research: docs/Audience Research.md

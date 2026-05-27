@@ -1,0 +1,61 @@
+slug: planning
+name: Стелю соломку. Хочу не как родители
+priority: 2  # стратегически второй — почти без конкуренции
+age_range: [28, 42]
+marriage_years_range: null  # планирует свадьбу или новые отношения
+has_children: false  # обычно ещё нет
+spouse_state: помолвлены / в новых отношениях после паузы
+situation: |
+  Планирует свадьбу или в новых отношениях после развода/паузы.
+  Начитанная, рефлексирующая.
+
+triggers:
+  - помолвка
+  - переезд под одну крышу
+  - обсуждение детей
+  - страх «повторить»
+
+pain_phrases:
+  - "не хочу как мама"
+  - "боюсь повторить"
+  - "теперь хочу по-другому"
+  - "не доверяю себе в выборе"
+
+objections:
+  - "сейчас всё хорошо — зачем что-то делать"
+  - "может, я преувеличиваю"
+  - "партнёр против"
+
+decision_speed: "1-2 месяца"
+willing_to_pay_range_rub: [35000, 70000]
+decision_factors:
+  - "медленно, методично"
+  - "сравнивает варианты"
+  - "воспринимает как инвестицию"
+
+main_channels:
+  - telegram
+  - podcasts
+supplemental_channels:
+  - youtube_lectures
+  - book_blogs
+
+content_formats_that_work:
+  - podcasts_30_60_min
+  - posts_with_research
+
+active_hours:
+  weekdays: "обед и вечер"
+
+main_message: |
+  Лучшее перед новым браком — не «довериться чувствам»,
+  а заранее договориться о том, что ломает большинство пар.
+
+main_psycho_types: [analyst]
+primary_psycho_type: analyst
+
+strategic_note: |
+  Стратегически второй сегмент после «Усталой жены».
+  Курсов «до брака» массово нет — занять почти без конкуренции.
+
+source_section: "docs/Audience Research.md §2 Сегмент 3"

@@ -1,0 +1,63 @@
+slug: tired_wife
+name: Усталая жена. Живём как соседи
+priority: 1  # главный сегмент — основная аудитория первого потока
+age_range: [32, 45]
+marriage_years_range: [5, 15]
+has_children: true
+spouse_state: нормальный, но не так как раньше
+situation: |
+  В браке 5-15 лет, есть дети. Муж «нормальный, но не так, как раньше».
+  Не катастрофа, но усталость и отчуждение.
+
+triggers:
+  - накопление за 6-24 месяца
+  - точка — какой-то «маленький» момент (фраза мужа, ссора, отпуск без эмоций)
+
+pain_phrases:
+  - "он меня не слышит"
+  - "живём как соседи"
+  - "я тащу всё одна"
+  - "между нами стена"
+  - "я устала"
+
+objections:
+  - "у нас не катастрофа"
+  - "муж не пойдёт"
+  - "это выкачивание денег"
+  - "уже пробовала, не помогает"
+
+decision_speed: "2-6 недель"
+willing_to_pay_range_rub: [25000, 60000]
+decision_factors:
+  - "цена не главный фактор"
+  - "подписка на канал, бесплатный вебинар, рекомендация подруги"
+
+main_channels:
+  - telegram_channels_psychologists
+supplemental_channels:
+  - reels_via_vpn
+  - tinkoff_journal
+  - moms_chats
+
+content_formats_that_work:
+  - cases_700_1200_chars
+  - reels_one_pain
+  - tg_voice_messages
+
+active_hours:
+  weekdays: "21:00-23:30"
+  weekends: "08:00-10:00"
+
+main_message: |
+  Между Вами стена — это не про характеры.
+  Это про то, как Вы не договаривались быть взрослыми вдвоём.
+
+main_psycho_types: [patient, analyst]
+primary_psycho_type: patient
+
+strategic_note: |
+  Самый массовый сегмент. Главная аудитория первого потока.
+  Стратегия отстройки: тон «без женственности, без эзотерики, без давления» —
+  забирается у Друмы и Левчук. Большой объём, реалистичный захват.
+
+source_section: "docs/Audience Research.md §2 Сегмент 1"

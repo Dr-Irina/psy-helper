@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "updated_at": "2026-05-27",
+  "source": "docs/Audience Research.md §3 «Пересечение типов с сегментами»",
+  "matrix": {
+    "tired_wife": {
+      "primary": "patient",
+      "secondary": "analyst",
+      "note": "Самая массовая комбинация. Тёрпеливая 2-4 года читает психологов и не покупает курс."
+    },
+    "on_edge": {
+      "primary": "impulsive",
+      "secondary": "patient",
+      "note": "Тёрпеливая, дошедшая до края. Импульсивная решит быстро."
+    },
+    "planning": {
+      "primary": "analyst",
+      "secondary": null,
+      "note": "Аналитик почти всегда. Медленная, методичная, лояльная."
+    },
+    "emigration": {
+      "primary": "referral",
+      "secondary": "analyst",
+      "note": "Придёт через чат русскоязычных в её стране."
+    }
+  },
+  "most_frequent_combinations_ranked": [
+    {
+      "rank": 1,
+      "segment": "tired_wife",
+      "psycho_type": "patient",
+      "note": "Самая массовая. Женщина, которая 2-4 года читает психологов и не покупает курс"
+    },
+    {
+      "rank": 2,
+      "segment": "tired_wife",
+      "psycho_type": "analyst",
+      "note": "Образованная, рефлексирующая, готовая сравнивать"
+    },
+    {
+      "rank": 3,
+      "segment": "on_edge",
+      "psycho_type": "impulsive",
+      "note": "Небольшая, но острая. Решит быстро"
+    },
+    {
+      "rank": 4,
+      "segment": "planning",
+      "psycho_type": "analyst",
+      "note": "Медленная, методичная, лояльная"
+    },
+    {
+      "rank": 5,
+      "segment": "emigration",
+      "psycho_type": "referral",
+      "note": "Придёт через чат русскоязычных в её стране"
+    }
+  ],
+  "main_70_percent_focus": [
+    "tired_wife + patient",
+    "tired_wife + analyst"
+  ],
+  "underserved_by_competitors": {
+    "audience": "patient (Тёрпеливая)",
+    "note": "Тёрпеливая практически нигде не обслуживается как отдельная аудитория. Огромная незанятая ниша. Главная отстройка Академии Супружества."
+  }
+}

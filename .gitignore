@@ -12,7 +12,37 @@ venv/
 .env
 .env.local
 
-data/
+# Data: whitelist подход
+# По умолчанию игнорируем всё в data/, явно включаем конфигурационные артефакты.
+data/**
+
+# Конфигурация контент-генератора (layered config): voice profiles, audience,
+# channels, content forms — это «настройки», должны быть в git.
+!data/voice_profiles/
+!data/voice_profiles/**
+!data/audience/
+!data/audience/**
+!data/channels/
+!data/channels/**
+!data/content_forms/
+!data/content_forms/**
+
+# Style artifacts: lexicon, raw_quotes, forbidden_topics — настройки стиля.
+!data/style/
+!data/style/**
+
+# Voice-documents: черновики (markdown) — версионируем; tmp-файлы Claude не нужны.
+!data/voice_document/
+!data/voice_document/*.md
+data/voice_document/_input_for_claude.md
+
+# Большое (не в git):
+#   data/lectures/         — ~26 GB audio
+#   data/transcripts/      — ~гигабайты raw.json
+#   data/concepts_digest.md, data/review_for_meeting.md — пересобираются
+#   data/classify_state.json, data/voice_doc_state.json — operational state
+#   data/classify_samples/ — тестовые выгрузки
+
 models/
 
 .DS_Store
