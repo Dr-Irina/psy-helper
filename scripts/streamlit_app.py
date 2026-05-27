@@ -38,6 +38,13 @@ from psy_helper.content_gen.loaders import (
     list_voice_profiles,
     load_channel,
     load_content_form,
+    load_forbidden_topics,
+    load_lexicon,
+    load_psycho_type,
+    load_raw_quotes,
+    load_segment,
+    load_voice_doc,
+    load_voice_profile,
 )
 from psy_helper.content_gen.storage import (
     list_drafts,
@@ -312,9 +319,10 @@ with st.sidebar:
     else:
         st.caption("Активной версии нет.")
 
-tab_search, tab_types, tab_lectures, tab_related, tab_gen, tab_drafts = st.tabs(
+(tab_search, tab_types, tab_lectures, tab_related,
+ tab_gen, tab_drafts, tab_sources) = st.tabs(
     ["🔍 Поиск", "🧩 По типам", "📖 По лекциям", "🔗 Похожие",
-     "🎨 Генератор", "📋 Черновики"]
+     "🎨 Генератор", "📋 Черновики", "📚 Источники"]
 )
 
 # --- Tab: Поиск ---
@@ -489,6 +497,59 @@ with tab_gen:
                                       value=2, format_func=lambda v: "—" if v is None else str(v),
                                       key="gen_stage")
 
+    # ℹ-expander'ы под dropdown'ами — Анна видит, что значит каждый выбор
+    with st.expander(f"ℹ Что в «{voice_slug}»?"):
+        _vp = load_voice_profile(voice_slug)
+        st.markdown(
+            f"**Автор:** {_vp.author}  · **Регистр:** {_vp.register_}  "
+            f"· **Обращение:** «{_vp.form_of_address}»  · **Мат:** "
+            f"{'разрешён' if _vp.mat_allowed else 'нет'}"
+        )
+        if getattr(_vp, "description", None):
+            st.caption(_vp.description.strip())
+        if _vp.antipatterns:
+            st.markdown("**Антипаттерны:** " + ", ".join(f"«{p}»" for p in _vp.antipatterns))
+        if _vp.term_replacements:
+            st.markdown("**Замены терминов:** " + ", ".join(
+                f"«{k}» → " + ("УДАЛИТЬ" if v is None else f"«{v}»")
+                for k, v in _vp.term_replacements.items()
+            ))
+    if segment_slug != "—":
+        with st.expander(f"ℹ Что в сегменте «{segment_slug}»?"):
+            _seg = load_segment(segment_slug)
+            st.markdown(f"**{_seg.name}**")
+            if _seg.situation:
+                st.caption(_seg.situation.strip())
+            if _seg.pain_phrases:
+                st.markdown("**Их слова о боли:** " + " / ".join(f"«{p}»" for p in _seg.pain_phrases))
+            if _seg.main_message:
+                st.info(f"**Главное сообщение:** {_seg.main_message.strip()}")
+    if pt_slug != "—":
+        with st.expander(f"ℹ Что в психотипе «{pt_slug}»?"):
+            _pt = load_psycho_type(pt_slug)
+            st.markdown(f"**{_pt.name}** · мотиватор: {_pt.motivator}")
+            if _pt.attracts:
+                st.markdown("**Цепляет:** " + ", ".join(_pt.attracts))
+            if _pt.repels:
+                st.markdown("**Отталкивает:** " + ", ".join(_pt.repels))
+            if _pt.key_argument:
+                st.info(f"**Ключевой аргумент:** {_pt.key_argument}")
+    with st.expander(f"ℹ Что в канале «{channel_slug}»?"):
+        _ch = load_channel(channel_slug)
+        L = _ch.length
+        if L.max_chars:
+            st.markdown(f"**Длина:** {L.min_chars or '?'}–{L.max_chars} символов (цель {L.optimal_chars})")
+        elif L.duration_seconds_max:
+            st.markdown(f"**Длительность:** {L.duration_seconds_min}–{L.duration_seconds_max} сек")
+        st.markdown(f"**Модель по умолчанию:** {_ch.preferred_model}")
+        if _ch.hook_style:
+            st.caption(f"Hook: {_ch.hook_style.strip()}")
+    with st.expander(f"ℹ Что в форме «{form_slug}»?"):
+        _cf = load_content_form(form_slug)
+        st.markdown(f"**{_cf.name}** · минимум фирменных фраз: {_cf.lexicon_min}")
+        if _cf.structure_template:
+            st.caption(_cf.structure_template.strip())
+
     topics_choice = st.multiselect(
         "Топики (фильтр корпуса)",
         ["marriage", "partnership", "children", "teens", "confidence",
@@ -641,6 +702,17 @@ with tab_drafts:
                 f"cache_w={full['cache_creation_tokens']} cache_r={full['cache_read_tokens']} · "
                 f"duration={full['generation_duration_ms']}ms"
             )
+            with st.expander("🧩 Конфиг этого драфта (snapshot)"):
+                st.json(full["config_snapshot"], expanded=False)
+            with st.expander("🔗 Provenance — ссылки на корпус"):
+                prov = full["provenance"] or {}
+                if prov:
+                    for tag, uuid in list(prov.items())[:30]:
+                        st.markdown(f"- `{tag}` → `{uuid}`")
+                    if len(prov) > 30:
+                        st.caption(f"… ещё {len(prov) - 30}")
+                else:
+                    st.caption("(нет ссылок)")
 
             notes_key = f"notes_{d['id']}"
             notes = st.text_input("Комментарий (опционально):", key=notes_key)
@@ -663,3 +735,218 @@ with tab_drafts:
                 if st.button("↺ В draft", key=f"rev_{d['id']}"):
                     update_status(conn, d["id"], status="draft", reviewed_by="UI")
                     st.rerun()
+
+
+# --- Tab: 📚 Источники ---
+with tab_sources:
+    st.subheader("Что использует генератор")
+    st.caption(
+        "Все материалы, на которых строятся черновики: голоса, voice-документы, "
+        "фирменные фразы, запрещённое, аудитория, каналы и формы."
+    )
+
+    section = st.radio(
+        "Раздел",
+        ["🎙 Voice profiles", "📜 Voice documents", "💬 Стиль (lexicon + forbidden)",
+         "👤 Аудитория (segments + типы)", "📡 Каналы", "🧱 Формы"],
+        horizontal=True, key="sources_section",
+    )
+
+    # ─── Voice profiles ──────────────────────────────────────────────────────
+    if section.startswith("🎙"):
+        st.caption("Каждый профиль = «как звучит автор» в конкретном регистре.")
+        for slug in list_voice_profiles():
+            vp = load_voice_profile(slug)
+            placeholder = " (PLACEHOLDER)" if vp.placeholder else ""
+            with st.expander(f"**{vp.name}** · `{slug}`{placeholder}", expanded=False):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(f"- **Автор:** {vp.author}")
+                    st.markdown(f"- **Регистр:** {vp.register_}")
+                    st.markdown(f"- **Обращение:** «{vp.form_of_address}»")
+                    st.markdown(f"- **Мат:** {'разрешён' if vp.mat_allowed else 'нет'}")
+                    st.markdown(f"- **Провокация:** {vp.provocation_allowed}")
+                with col2:
+                    st.markdown(f"- **Voice doc:** `{vp.sources.voice_doc}`")
+                    st.markdown(f"- **Lexicon:** `{vp.sources.lexicon}`")
+                    st.markdown(f"- **Raw quotes:** `{vp.sources.raw_quotes.path}`")
+                    st.markdown(
+                        f"- **Фильтр цитат:** remove_mat={vp.sources.raw_quotes.filter.remove_mat}, "
+                        f"max_quotes={vp.sources.raw_quotes.filter.max_quotes}"
+                    )
+                if getattr(vp, "description", None):
+                    st.markdown("**Описание:**")
+                    st.info(str(vp.description).strip())
+                if vp.antipatterns:
+                    st.markdown("**Антипаттерны (запрещены):**")
+                    st.markdown("\n".join(f"- «{p}»" for p in vp.antipatterns))
+                if vp.term_replacements:
+                    st.markdown("**Замены терминов:**")
+                    for k, v in vp.term_replacements.items():
+                        action = "УДАЛИТЬ" if v is None else f"→ «{v}»"
+                        st.markdown(f"- «{k}» {action}")
+                if vp.joint_markers:
+                    st.markdown("**Joint markers (для совместного голоса):**")
+                    st.markdown("\n".join(f"- {m}" for m in vp.joint_markers))
+
+    # ─── Voice documents ─────────────────────────────────────────────────────
+    elif section.startswith("📜"):
+        st.caption(
+            "Voice document = «семантика голоса автора» (принципы, red lines, "
+            "техники, источники). Используется как контекст в системном промте."
+        )
+        from pathlib import Path
+        VD_DIR = Path("data/voice_document")
+        files = sorted(VD_DIR.glob("*.md"))
+        if not files:
+            st.info("В `data/voice_document/` нет .md файлов.")
+        else:
+            chosen = st.selectbox(
+                "Voice document",
+                files,
+                format_func=lambda p: p.name,
+                key="sources_vd_pick",
+            )
+            text = load_voice_doc(str(chosen))
+            st.caption(f"`{chosen}` · {len(text):,} chars")
+            st.markdown(text)
+
+    # ─── Стиль (lexicon + forbidden) ─────────────────────────────────────────
+    elif section.startswith("💬"):
+        lex = load_lexicon()
+        forb = load_forbidden_topics()
+        q_count = len(lex.get("questions", []))
+        m_count = len(lex.get("metaphors", []))
+        st.caption(
+            f"Lexicon: **{q_count} фирменных вопросов** + **{m_count} метафор**. "
+            f"Forbidden v{forb.get('version', '?')} — обновлён {forb.get('updated_at', '?')}."
+        )
+
+        sub = st.radio("Что смотрим", ["Вопросы", "Метафоры", "Запрещённое"],
+                       horizontal=True, key="sources_style_sub")
+        if sub == "Вопросы":
+            search = st.text_input("Поиск по фразе или описанию", key="lex_q_search")
+            items = lex.get("questions", [])
+            if search:
+                s = search.lower()
+                items = [q for q in items if s in q.get("phrase", "").lower()
+                         or s in q.get("description", "").lower()]
+            st.caption(f"Показано: {len(items)}")
+            for q in items:
+                with st.expander(f"**«{q['phrase']}»** · упомянуто {q.get('mentions', '?')} раз"):
+                    st.write(q.get("description", ""))
+        elif sub == "Метафоры":
+            search = st.text_input("Поиск по фразе или описанию", key="lex_m_search")
+            items = lex.get("metaphors", [])
+            if search:
+                s = search.lower()
+                items = [m for m in items if s in m.get("phrase", "").lower()
+                         or s in m.get("description", "").lower()]
+            st.caption(f"Показано: {len(items)} · сортировка как в файле")
+            for m in items[:150]:  # ограничиваем для скорости рендера
+                with st.expander(f"**«{m['phrase']}»** · упомянуто {m.get('mentions', '?')} раз"):
+                    st.write(m.get("description", ""))
+            if len(items) > 150:
+                st.caption(f"… скрыто ещё {len(items) - 150}. Уточни поиск чтобы увидеть.")
+        else:  # Запрещённое
+            st.markdown("### Запрещённые ТЕМЫ (топики)")
+            for t in forb.get("topics", []):
+                with st.expander(f"**{t['label']}** · `{t['id']}`"):
+                    st.markdown(f"**Причина:** {t.get('reason', '—')}")
+                    if t.get("examples"):
+                        st.markdown("**Примеры:** " + ", ".join(f"«{e}»" for e in t["examples"]))
+            st.markdown("### Запрещённые ФРАЗЫ (антипаттерны языка)")
+            for g in forb.get("phrases", []):
+                applies = ", ".join(g.get("applies_to", []))
+                with st.expander(f"**{g['label']}** · `{g['id']}` · применяется к: {applies}"):
+                    st.markdown(f"**Причина:** {g.get('reason', '—')}")
+                    st.markdown("\n".join(f"- «{p}»" for p in g.get("phrases", [])))
+
+    # ─── Аудитория ───────────────────────────────────────────────────────────
+    elif section.startswith("👤"):
+        st.caption(
+            "Сегменты — КОМУ пишем (внешний контекст: ситуация, боли, возражения). "
+            "Психотипы — ЧЕМ цеплять (как они реагируют, что отталкивает)."
+        )
+        sub = st.radio("Что", ["Сегменты", "Психотипы"], horizontal=True, key="aud_sub")
+        if sub == "Сегменты":
+            for slug in list_segments():
+                seg = load_segment(slug)
+                tag = " 🌟 главный" if seg.priority == 1 else ""
+                with st.expander(f"**{seg.name}** · `{slug}`{tag}"):
+                    if seg.situation:
+                        st.info(seg.situation.strip())
+                    if seg.pain_phrases:
+                        st.markdown("**Их слова о боли:** " + " / ".join(f"«{p}»" for p in seg.pain_phrases))
+                    if seg.objections:
+                        st.markdown("**Возражения:** " + " / ".join(f"«{o}»" for o in seg.objections))
+                    if seg.main_message:
+                        st.success(f"**Главное сообщение для них:**\n\n{seg.main_message.strip()}")
+                    if seg.main_psycho_types:
+                        st.caption(f"Подходящие психотипы: {', '.join(seg.main_psycho_types)}")
+        else:
+            for slug in list_psycho_types():
+                pt = load_psycho_type(slug)
+                tag = " 🌟 главный" if pt.priority == 1 else ""
+                with st.expander(f"**{pt.name}** · `{slug}`{tag}"):
+                    st.markdown(f"**Мотиватор:** {pt.motivator}")
+                    if pt.decision_speed:
+                        st.markdown(f"**Скорость решения:** {pt.decision_speed}")
+                    if pt.attracts:
+                        st.markdown("**Цепляет:** " + ", ".join(pt.attracts))
+                    if pt.repels:
+                        st.markdown("**Отталкивает:** " + ", ".join(pt.repels))
+                    if pt.key_argument:
+                        st.success(f"**Ключевой аргумент:** {pt.key_argument}")
+                    if pt.cta_examples:
+                        st.markdown("**Примеры CTA:**")
+                        st.markdown("\n".join(f"- {c}" for c in pt.cta_examples))
+
+    # ─── Каналы ──────────────────────────────────────────────────────────────
+    elif section.startswith("📡"):
+        st.caption("Канал = ГДЕ публикуется. Длина, hook, CTA, рекомендованная модель.")
+        for slug in list_channels():
+            ch = load_channel(slug)
+            with st.expander(f"**{ch.name}** · `{slug}` · модель: {ch.preferred_model.split('-')[1]}"):
+                L = ch.length
+                if L.max_chars:
+                    st.markdown(f"- **Длина:** {L.min_chars or '?'}–{L.max_chars} символов "
+                                f"(оптимально {L.optimal_chars})")
+                elif L.duration_seconds_max:
+                    st.markdown(f"- **Длительность:** {L.duration_seconds_min}–{L.duration_seconds_max} сек "
+                                f"(оптимально {L.duration_seconds_optimal})")
+                st.markdown(f"- **Обращение по умолчанию:** «{ch.voice_form_default}»")
+                st.markdown(f"- **CTA:** {ch.cta_required} ({ch.cta_style or 'без описания'})")
+                if ch.hook_style:
+                    st.markdown(f"**Hook:** {ch.hook_style.strip()}")
+                if ch.structure_hint:
+                    st.markdown("**Структурный совет:**")
+                    st.code(ch.structure_hint.strip(), language="markdown")
+                if ch.best_psycho_types or ch.best_segments or ch.best_hunt_stages:
+                    st.caption(
+                        f"Хорошо для: типов={ch.best_psycho_types or '—'} · "
+                        f"сегментов={ch.best_segments or '—'} · "
+                        f"hunt_stages={ch.best_hunt_stages or '—'}"
+                    )
+
+    # ─── Формы ───────────────────────────────────────────────────────────────
+    elif section.startswith("🧱"):
+        st.caption("Форма = КАК устроен нарратив (storytelling / opinion / quiz / …).")
+        for slug in list_content_forms():
+            cf = load_content_form(slug)
+            with st.expander(f"**{cf.name}** · `{slug}` · мин. фирменных фраз: {cf.lexicon_min}"):
+                if cf.structure_template:
+                    st.markdown("**Структура:**")
+                    st.code(cf.structure_template.strip(), language="markdown")
+                if cf.hook_style:
+                    st.markdown(f"**Hook:** {cf.hook_style.strip()}")
+                if cf.requires_hero:
+                    st.warning("⚠ Эта форма требует героя (анонимизированного)")
+                if cf.example_outline:
+                    st.markdown("**Пример outline:**")
+                    st.code(cf.example_outline.strip(), language="markdown")
+                if cf.notes:
+                    st.markdown("**Заметки:**")
+                    st.markdown("\n".join(f"- {n}" for n in cf.notes))
+                if cf.best_channels:
+                    st.caption(f"Лучшие каналы: {', '.join(cf.best_channels)}")
