@@ -1,27 +1,97 @@
-"""Справочный интерфейс по методу Анны (МVP-0).
+"""Справочный интерфейс по методу Анны (МVP-0) + content engine v0.
 
 Tabs:
-  1. Поиск      — гибридный (BM25+vector) по concepts и clean_segments
-  2. По типам   — все концепты одного типа списком
-  3. По лекциям — выбрать лекцию, увидеть её блоки и привязанные концепты
-  4. Похожие    — выбрать концепт, увидеть близкие по смыслу
+  1. Поиск       — гибридный (BM25+vector) по concepts и clean_segments
+  2. По типам    — все концепты одного типа списком
+  3. По лекциям  — выбрать лекцию, увидеть её блоки и привязанные концепты
+  4. Похожие     — выбрать концепт, увидеть близкие по смыслу
+  5. 🎨 Генератор — собрать черновик контента из 5 layers (Step 8)
+  6. 📋 Черновики — фильтры по статусу + одобрить/отклонить/опубликовать
 
 Запуск:
     docker compose up -d ui
     # → http://localhost:8501
+
+Безопасность:
+    Защищён простым password gate (env STREAMLIT_PASSWORD).
+    Без пароля приложение не рендерится. Это не enterprise-auth,
+    но защита от случайного захода на localhost/ngrok.
 """
 from __future__ import annotations
+
+import os
+import time
+from datetime import datetime, timedelta
 
 import streamlit as st
 from dotenv import load_dotenv
 from pgvector.psycopg import register_vector
 from sentence_transformers import SentenceTransformer
 
+from psy_helper.content_gen.config import GenerationConfig
+from psy_helper.content_gen.generator import generate_streaming
+from psy_helper.content_gen.loaders import (
+    list_channels,
+    list_content_forms,
+    list_psycho_types,
+    list_segments,
+    list_voice_profiles,
+    load_channel,
+    load_content_form,
+)
+from psy_helper.content_gen.storage import (
+    list_drafts,
+    load_draft,
+    update_status,
+)
 from psy_helper.db.connection import connect
 from psy_helper.search import hybrid_search_concepts, hybrid_search_segments
 from psy_helper.taxonomy import CONCEPT_TYPES
 
 load_dotenv()
+
+# ─── Auth + rate limit ────────────────────────────────────────────────────────
+
+RATE_LIMIT_MAX = 10           # генераций
+RATE_LIMIT_WINDOW = 300        # сек (5 минут)
+
+
+def _gate_password() -> None:
+    """Простой password gate. Без пароля приложение не рендерится."""
+    expected = os.getenv("STREAMLIT_PASSWORD", "").strip()
+    if not expected:
+        # Если пароль не задан в env — это dev/локально, не блокируем.
+        return
+    if st.session_state.get("auth_ok"):
+        return
+    st.set_page_config(page_title="psy-helper · вход", layout="centered", page_icon="🔒")
+    st.title("🔒 psy-helper")
+    pw = st.text_input("Пароль:", type="password")
+    if pw == expected:
+        st.session_state["auth_ok"] = True
+        st.rerun()
+    elif pw:
+        st.error("Неверный пароль.")
+    st.stop()
+
+
+def _check_rate_limit() -> tuple[bool, int]:
+    """Returns (allowed, seconds_until_next_slot)."""
+    now = time.time()
+    ts = st.session_state.setdefault("gen_timestamps", [])
+    # Сбрасываем старые отметки
+    ts[:] = [t for t in ts if now - t < RATE_LIMIT_WINDOW]
+    if len(ts) >= RATE_LIMIT_MAX:
+        wait = int(RATE_LIMIT_WINDOW - (now - ts[0])) + 1
+        return False, wait
+    return True, 0
+
+
+def _record_generation() -> None:
+    st.session_state.setdefault("gen_timestamps", []).append(time.time())
+
+
+_gate_password()
 
 MODEL_NAME = "intfloat/multilingual-e5-large"
 
@@ -242,8 +312,9 @@ with st.sidebar:
     else:
         st.caption("Активной версии нет.")
 
-tab_search, tab_types, tab_lectures, tab_related = st.tabs(
-    ["🔍 Поиск", "🧩 По типам", "📖 По лекциям", "🔗 Похожие"]
+tab_search, tab_types, tab_lectures, tab_related, tab_gen, tab_drafts = st.tabs(
+    ["🔍 Поиск", "🧩 По типам", "📖 По лекциям", "🔗 Похожие",
+     "🎨 Генератор", "📋 Черновики"]
 )
 
 # --- Tab: Поиск ---
@@ -382,3 +453,213 @@ with tab_related:
             for sid, sname, stype, shared in co_occurring_concepts(conn, cid):
                 with st.expander(f"**{sname}** · _{stype}_ · {shared} общих блоков"):
                     pass
+
+# --- Tab: 🎨 Генератор ---
+with tab_gen:
+    st.subheader("Сборка черновика контента")
+    st.caption(
+        "5 слоёв: голос × сегмент × психотип × канал × нарративная форма. "
+        f"Лимит: {RATE_LIMIT_MAX} генераций / {RATE_LIMIT_WINDOW//60} минут на сессию."
+    )
+
+    col_a, col_b = st.columns(2, gap="medium")
+    with col_a:
+        voice_slug = st.selectbox("Голос (voice profile)", list_voice_profiles(),
+                                  index=list_voice_profiles().index("anna_product")
+                                  if "anna_product" in list_voice_profiles() else 0,
+                                  key="gen_voice")
+        channel_slug = st.selectbox("Канал", list_channels(),
+                                    index=list_channels().index("tg_post")
+                                    if "tg_post" in list_channels() else 0,
+                                    key="gen_channel")
+        form_slug = st.selectbox("Нарративная форма", list_content_forms(),
+                                 index=list_content_forms().index("storytelling")
+                                 if "storytelling" in list_content_forms() else 0,
+                                 key="gen_form")
+    with col_b:
+        segment_slug = st.selectbox("Сегмент (опционально)", ["—"] + list_segments(),
+                                    index=(["—"] + list_segments()).index("tired_wife")
+                                    if "tired_wife" in list_segments() else 0,
+                                    key="gen_segment")
+        pt_slug = st.selectbox("Психотип (опционально)", ["—"] + list_psycho_types(),
+                               index=(["—"] + list_psycho_types()).index("patient")
+                               if "patient" in list_psycho_types() else 0,
+                               key="gen_pt")
+        hunt_stage = st.select_slider("Ступень Ханта", options=[None, 1, 2, 3, 4, 5],
+                                      value=2, format_func=lambda v: "—" if v is None else str(v),
+                                      key="gen_stage")
+
+    topics_choice = st.multiselect(
+        "Топики (фильтр корпуса)",
+        ["marriage", "partnership", "children", "teens", "confidence",
+         "personal_effectiveness", "finance", "communication", "general"],
+        default=["marriage"], key="gen_topics",
+    )
+    topic_hint = st.text_input(
+        "Конкретная тема (hint, опционально)",
+        placeholder="например: границы в супружестве",
+        key="gen_hint",
+    )
+
+    model_override = st.radio(
+        "Модель",
+        options=[None, "claude-sonnet-4-6", "claude-haiku-4-5"],
+        format_func=lambda m: "из канала" if m is None else m.split("-")[1].capitalize(),
+        horizontal=True, key="gen_model",
+    )
+
+    # Cost panel
+    cum = st.session_state.get("cumulative_cost", 0.0)
+    cum_n = st.session_state.get("cumulative_count", 0)
+    st.caption(f"💰 За сессию: ${cum:.4f} · {cum_n} генераций")
+
+    if st.button("🚀 Сгенерировать", type="primary", key="gen_run"):
+        allowed, wait = _check_rate_limit()
+        if not allowed:
+            st.error(f"Превышен лимит ({RATE_LIMIT_MAX}/{RATE_LIMIT_WINDOW//60}мин). "
+                     f"Подожди ~{wait} сек.")
+        else:
+            cfg = GenerationConfig(
+                voice_profile=voice_slug,
+                channel=channel_slug,
+                content_form=form_slug,
+                segment=None if segment_slug == "—" else segment_slug,
+                psycho_type=None if pt_slug == "—" else pt_slug,
+                hunt_stage=hunt_stage,
+                topics=topics_choice,
+                topic_hint=topic_hint or None,
+                model_override=model_override,
+            )
+
+            ch = load_channel(channel_slug)
+            cf = load_content_form(form_slug)
+            st.caption(f"Канал: {ch.length.min_chars or '?'}–{ch.length.max_chars or '?'} chars · "
+                       f"lexicon_min={cf.lexicon_min} · модель {model_override or ch.preferred_model}")
+
+            placeholder = st.empty()
+            placeholder.info("Загружаю модель эмбеддингов и подбираю материал из корпуса…")
+
+            content_buf: list[str] = []
+            draft_holder: dict = {}
+
+            def _stream_capture():
+                gen = generate_streaming(cfg, conn)
+                while True:
+                    try:
+                        chunk = next(gen)
+                        content_buf.append(chunk)
+                        yield chunk
+                    except StopIteration as e:
+                        draft_holder["draft"] = e.value
+                        return
+
+            with placeholder.container():
+                st.write_stream(_stream_capture())
+
+            _record_generation()
+            draft = draft_holder.get("draft")
+            if draft:
+                st.session_state["cumulative_cost"] = cum + draft.cost.cost_usd
+                st.session_state["cumulative_count"] = cum_n + 1
+                st.session_state["last_draft_id"] = draft.id
+
+                # Quality flags
+                quality_flags = [f for f in draft.pii_flags if not f.startswith(("name:", "phone:", "email:"))]
+                pii_only = [f for f in draft.pii_flags if f.startswith(("name:", "phone:", "email:"))]
+
+                if pii_only:
+                    st.warning(f"⚠ PII в драфте — проверь вручную: {', '.join(pii_only)}")
+                if quality_flags:
+                    st.warning(f"⚠ Quality flags: {', '.join(quality_flags)}")
+
+                st.success(
+                    f"✓ Сохранён id={draft.id[:8]}… · ${draft.cost.cost_usd:.4f} · "
+                    f"{len(draft.content)} chars · {draft.generation_duration_ms} ms · "
+                    f"in={draft.cost.tokens_input} out={draft.cost.tokens_output} "
+                    f"cache_w={draft.cost.cache_creation_tokens} cache_r={draft.cost.cache_read_tokens}"
+                )
+
+                col_ok, col_no, col_again = st.columns(3)
+                with col_ok:
+                    if st.button("✓ Одобрить", key="approve_now"):
+                        update_status(conn, draft.id, status="approved", reviewed_by="UI")
+                        st.toast("Одобрено")
+                with col_no:
+                    if st.button("✗ Отклонить", key="reject_now"):
+                        update_status(conn, draft.id, status="rejected", reviewed_by="UI")
+                        st.toast("Отклонено")
+                with col_again:
+                    st.caption("Ещё вариант — снова нажми 🚀 (тот же конфиг, anti-repeat активен)")
+
+
+# --- Tab: 📋 Черновики ---
+with tab_drafts:
+    st.subheader("Черновики")
+    f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+    with f_col1:
+        f_status = st.selectbox("Статус", ["—", "draft", "approved", "rejected", "failed", "published"],
+                                key="drafts_status")
+    with f_col2:
+        f_voice = st.selectbox("Голос", ["—"] + list_voice_profiles(), key="drafts_voice")
+    with f_col3:
+        f_channel = st.selectbox("Канал", ["—"] + list_channels(), key="drafts_channel")
+    with f_col4:
+        f_segment = st.selectbox("Сегмент", ["—"] + list_segments(), key="drafts_segment")
+
+    drafts = list_drafts(
+        conn,
+        status=None if f_status == "—" else f_status,
+        voice_profile=None if f_voice == "—" else f_voice,
+        channel=None if f_channel == "—" else f_channel,
+        segment=None if f_segment == "—" else f_segment,
+        limit=50,
+    )
+
+    total_cost = sum(float(d["cost_usd"] or 0) for d in drafts)
+    st.caption(f"Найдено: {len(drafts)} · общая стоимость: ${total_cost:.4f}")
+
+    if not drafts:
+        st.info("По фильтрам ничего не найдено.")
+    for d in drafts:
+        seg = d["segment_slug"] or "—"
+        stage = d["hunt_stage"] if d["hunt_stage"] is not None else "—"
+        hint = (d["topic_hint"] or "")[:60]
+        header = (f"**{d['status']}** · {d['voice_profile_slug']} × "
+                  f"{d['channel_slug']} × {d['content_form_slug']} · "
+                  f"seg={seg} stage={stage} · ${d['cost_usd'] or 0:.4f} · "
+                  f"{d['created_at'].strftime('%m-%d %H:%M')}"
+                  + (f" · «{hint}…»" if hint else ""))
+        with st.expander(header):
+            full = load_draft(conn, d["id"])
+            st.caption(f"id={d['id']}")
+            if full["pii_flags"]:
+                st.warning("Flags: " + ", ".join(full["pii_flags"]))
+            st.markdown(full["content"])
+            st.caption(
+                f"model={full['model']} · prompt_ver={full['prompt_version']} · "
+                f"tokens in={full['tokens_input']} out={full['tokens_output']} "
+                f"cache_w={full['cache_creation_tokens']} cache_r={full['cache_read_tokens']} · "
+                f"duration={full['generation_duration_ms']}ms"
+            )
+
+            notes_key = f"notes_{d['id']}"
+            notes = st.text_input("Комментарий (опционально):", key=notes_key)
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                if st.button("✓ Одобрить", key=f"appr_{d['id']}"):
+                    update_status(conn, d["id"], status="approved",
+                                  reviewed_by="UI", review_notes=notes or None)
+                    st.rerun()
+            with c2:
+                if st.button("✗ Отклонить", key=f"rej_{d['id']}"):
+                    update_status(conn, d["id"], status="rejected",
+                                  reviewed_by="UI", review_notes=notes or None)
+                    st.rerun()
+            with c3:
+                if st.button("📤 Опубликовать", key=f"pub_{d['id']}"):
+                    update_status(conn, d["id"], status="published", reviewed_by="UI")
+                    st.rerun()
+            with c4:
+                if st.button("↺ В draft", key=f"rev_{d['id']}"):
+                    update_status(conn, d["id"], status="draft", reviewed_by="UI")
+                    st.rerun()
