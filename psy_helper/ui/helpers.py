@@ -205,6 +205,26 @@ def similar_concepts(conn, concept_id, limit=12):
         return cur.fetchall()
 
 
+def concept_source_segments(conn, concept_id: str) -> list:
+    """Реальные блоки-источники для одного концепта.
+
+    Возвращает: [(segment_id, raw_id, title, summary, text, start_ts, end_ts, source_file)]
+    Используется в Поиске чтобы Анна могла открыть «откуда это знание».
+    """
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT cs.id::text, rt.id::text, cs.title, cs.summary, cs.text,
+                   cs.start_ts, cs.end_ts, rt.source_file
+            FROM clean_segments cs
+            JOIN raw_transcripts rt ON rt.id = cs.raw_id
+            WHERE cs.id = ANY(
+                SELECT unnest(source_segments) FROM concepts WHERE id = %s
+            )
+            ORDER BY rt.source_file, cs.start_ts
+        """, (concept_id,))
+        return cur.fetchall()
+
+
 def co_occurring_concepts(conn, concept_id, limit=10):
     with conn.cursor() as cur:
         cur.execute("""

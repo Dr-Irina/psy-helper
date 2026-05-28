@@ -27,56 +27,105 @@ def render() -> None:
 
     # ─── Поиск ─────────────────────────────────────────────────────────────
     with tab_search:
-        selected_types = st.multiselect(
-            "Фильтр по типам (опционально)",
-            list(CONCEPT_TYPES.keys()),
-            default=[],
-            format_func=lambda t: f"{t} — {H.TYPE_LABELS.get(t, t)}",
-            key="search_types",
-        )
         query = st.text_input(
             "Что найти?",
             placeholder="например: как слушать партнёра / что почитать / когда обращаться к терапевту",
+            key="search_query",
         )
+
+        with st.expander("⚙ Параметры поиска"):
+            f_cols = st.columns([3, 1])
+            with f_cols[0]:
+                selected_types = st.multiselect(
+                    "Фильтр по типам концептов (опционально)",
+                    list(CONCEPT_TYPES.keys()),
+                    default=[],
+                    format_func=lambda t: f"{t} — {H.TYPE_LABELS.get(t, t)}",
+                    key="search_types",
+                )
+            with f_cols[1]:
+                depth = st.number_input(
+                    "Глубина поиска", min_value=10, max_value=200, value=50, step=10,
+                    key="search_depth",
+                    help="Сколько результатов поднимать из БД по каждому источнику. "
+                         "Технический потолок ~100 (после ~50 начинается шум).",
+                )
 
         if query:
             with st.spinner("Поиск…"):
                 v = H.get_model().encode([f"query: {query}"], normalize_embeddings=True)[0]
-                concepts = H.do_search_concepts(conn, query, v, selected_types or None)
-                segments = H.do_search_segments(conn, query, v)
-                lexicon = H.do_search_lexicon(conn, query, v, limit=10)
+                concepts = H.do_search_concepts(conn, query, v, selected_types or None, limit=depth)
+                segments = H.do_search_segments(conn, query, v, limit=depth)
+                lexicon = H.do_search_lexicon(conn, query, v, limit=depth)
 
-            col_c, col_l, col_s = st.columns([3, 2, 2], gap="large")
-            with col_c:
-                st.subheader(f"🧩 Концепты ({len(concepts)})")
+            st.caption(
+                f"Найдено: **{len(concepts)}** концептов · "
+                f"**{len(lexicon)}** фирменных фраз · "
+                f"**{len(segments)}** блоков лекций"
+            )
+
+            t_c, t_l, t_s = st.tabs([
+                f"🧩 Концепты ({len(concepts)})",
+                f"❓ Фразы Анны ({len(lexicon)})",
+                f"📖 Блоки лекций ({len(segments)})",
+            ])
+
+            # ─── Концепты с группировкой по типам ────────────────────────
+            with t_c:
                 if not concepts:
                     st.info("Ничего не нашлось — попробуй другие слова.")
-                for c in concepts:
-                    sources_part = f" · в {c.sources_count} блоках" if c.sources_count else ""
-                    with st.expander(f"**{c.name}** · _{c.type}_ · {c.score:.3f}{sources_part}"):
-                        st.write(c.description or "")
-            with col_l:
-                st.subheader(f"❓ Фразы Анны ({len(lexicon)})")
-                st.caption("Её фирменные вопросы и метафоры из lexicon")
+                else:
+                    TYPE_EMOJI = {
+                        "term": "📖", "technique": "🛠", "claim": "💬", "warning": "⚠",
+                        "recommendation": "📚", "exercise": "🏋", "question": "❓",
+                        "metaphor": "🌀", "example": "📌",
+                    }
+                    grouped: dict[str, list] = {}
+                    for c in concepts:
+                        grouped.setdefault(c.type, []).append(c)
+                    for t in CONCEPT_TYPES.keys():
+                        items = grouped.get(t)
+                        if not items:
+                            continue
+                        emoji = TYPE_EMOJI.get(t, "🧩")
+                        label = H.TYPE_LABELS.get(t, t)
+                        _paginate(
+                            key=f"page_c_{t}",
+                            items=items,
+                            section_label=f"{emoji} {label} ({len(items)})",
+                            render=lambda c, _conn=conn: _render_concept(c, _conn),
+                        )
+
+            # ─── Фразы Анны ───────────────────────────────────────────────
+            with t_l:
+                st.caption("Её фирменные вопросы и метафоры из lexicon.json")
                 if not lexicon:
                     st.info("Нет похожих фраз.")
-                for li in lexicon:
-                    icon = "❓" if li.kind == "question" else "🌀"
-                    mentions = f" · упомянуто {li.mentions} раз" if li.mentions else ""
-                    with st.expander(f"{icon} **«{li.phrase}»** · {li.score:.3f}{mentions}"):
-                        st.write(li.description or "")
-            with col_s:
-                st.subheader(f"📖 Блоки лекций ({len(segments)})")
-                for s in segments:
-                    ts = H.fmt_ts_range(s.start_ts, s.end_ts)
-                    with st.expander(f"**{s.title}** · _{ts}_ · {s.score:.3f}"):
-                        st.write(s.summary or "")
-                        st.caption(f"📁 {H.lecture_name(s.source_file)}")
+                else:
+                    _paginate(
+                        key="page_lex",
+                        items=lexicon,
+                        section_label=None,
+                        render=lambda li: _render_lexicon(li),
+                    )
+
+            # ─── Блоки лекций ─────────────────────────────────────────────
+            with t_s:
+                if not segments:
+                    st.info("Нет похожих блоков.")
+                else:
+                    _paginate(
+                        key="page_seg",
+                        items=segments,
+                        section_label=None,
+                        render=lambda s: _render_segment(s),
+                    )
         else:
             st.info(
                 "Задай вопрос как клиент или как Анна — своими словами. "
-                "Гибридный поиск: BM25 (по словам) + векторный (по смыслу) "
-                "по концептам, лексикону (фирменные фразы) и блокам лекций."
+                "Гибридный поиск (BM25 + векторный) ищет одновременно "
+                "по концептам, фирменным фразам и блокам лекций — каждый "
+                "источник в своей вкладке."
             )
 
     # ─── По типам ──────────────────────────────────────────────────────────
@@ -162,3 +211,70 @@ def render() -> None:
                 for sid, sname, stype, shared in H.co_occurring_concepts(conn, cid):
                     with st.expander(f"**{sname}** · _{stype}_ · {shared} общих блоков"):
                         pass
+
+
+# ─── Пагинация и рендереры результатов ─────────────────────────────────────
+
+_PAGE_SIZE = 15
+
+
+def _paginate(*, key: str, items: list, section_label: str | None, render) -> None:
+    """Показать items пачкой по _PAGE_SIZE, с кнопкой «Показать ещё».
+
+    section_label = None → без под-заголовка (одна большая секция).
+    """
+    if section_label:
+        st.markdown(f"**{section_label}**")
+    shown = st.session_state.get(key, _PAGE_SIZE)
+    for item in items[:shown]:
+        render(item)
+    if shown < len(items):
+        cols = st.columns([3, 1])
+        cols[0].caption(f"Показано {min(shown, len(items))} из {len(items)}")
+        if cols[1].button(f"Показать ещё {min(_PAGE_SIZE, len(items) - shown)}",
+                          key=f"more_{key}"):
+            st.session_state[key] = shown + _PAGE_SIZE
+            st.rerun()
+    else:
+        st.caption(f"Показаны все {len(items)}")
+
+
+def _render_concept(c, conn) -> None:
+    sources_part = f" · в {c.sources_count} блоках" if c.sources_count else ""
+    with st.expander(f"{c.name} · {c.score:.3f}{sources_part}"):
+        st.write(c.description or "")
+        if c.sources_count:
+            with st.expander(f"📖 Откуда это (в {c.sources_count} блоках)"):
+                blocks = H.concept_source_segments(conn, c.id)
+                # группируем по лекции; внутри лекции сортируем по timestamp
+                by_lecture: dict[str, list] = {}
+                for row in blocks:
+                    _sid, _rid, _t, _s, _txt, st_ts, end_ts, src = row
+                    by_lecture.setdefault(src, []).append(row)
+                for src, items in by_lecture.items():
+                    items.sort(key=lambda r: r[5] or 0)
+                    lec = H.lecture_name(src)
+                    st.markdown(f"#### 📁 {lec}")
+                    for _sid, _rid, title, summary, text, st_ts, end_ts, _src in items:
+                        ts = H.fmt_ts_range(st_ts or 0, end_ts or 0)
+                        head = f"**{ts}**" + (f" · _{title}_" if title else "")
+                        st.markdown(head)
+                        if summary:
+                            st.caption(summary)
+                        with st.expander("Показать оригинальный текст"):
+                            st.write(text)
+
+
+def _render_lexicon(li) -> None:
+    icon = "❓" if li.kind == "question" else "🌀"
+    mentions = f" · упомянуто {li.mentions} раз" if li.mentions else ""
+    with st.expander(f"{icon} «{li.phrase}» · {li.score:.3f}{mentions}"):
+        st.write(li.description or "")
+
+
+def _render_segment(s) -> None:
+    from . import helpers as _H  # локальный импорт чтобы не дублировать
+    ts = _H.fmt_ts_range(s.start_ts, s.end_ts)
+    with st.expander(f"**{s.title}** · _{ts}_ · {s.score:.3f}"):
+        st.write(s.summary or "")
+        st.caption(f"📁 {_H.lecture_name(s.source_file)}")
