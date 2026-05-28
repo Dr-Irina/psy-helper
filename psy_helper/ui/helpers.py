@@ -155,7 +155,7 @@ def all_lectures(conn) -> list:
 def lecture_segments(conn, raw_id):
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT id::text, title, summary, start_ts, end_ts
+            SELECT id::text, title, summary, text, start_ts, end_ts
             FROM clean_segments WHERE raw_id = %s ORDER BY start_ts
         """, (raw_id,))
         return cur.fetchall()
@@ -185,10 +185,49 @@ def concepts_of_type(conn, type_name):
         return cur.fetchall()
 
 
+def browse_concepts_by_types(conn, types: list[str]) -> list:
+    """Каталог: все концепты выбранных типов, сортировка по числу источников.
+
+    Возвращает объекты ConceptHit-like (id/name/type/description/sources_count/score)
+    чтобы _render_concept мог их съесть без изменений.
+    """
+    from psy_helper.search import ConceptHit
+
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT id::text, name, type, description,
+                   array_length(source_segments, 1) AS sources_count
+            FROM concepts
+            WHERE type = ANY(%s)
+            ORDER BY sources_count DESC NULLS LAST, name
+        """, (types,))
+        rows = cur.fetchall()
+
+    return [
+        ConceptHit(
+            id=r[0], name=r[1], type=r[2], description=r[3],
+            sources_count=r[4], score=0.0,
+            bm25_rank=None, vec_rank=None,
+        )
+        for r in rows
+    ]
+
+
 def all_concept_names(conn):
     with conn.cursor() as cur:
         cur.execute("SELECT id::text, name, type FROM concepts ORDER BY name")
         return cur.fetchall()
+
+
+def get_concept(conn, concept_id: str):
+    """Полные данные одного концепта по id."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT id::text, name, type, COALESCE(description, ''),
+                   array_length(source_segments, 1) AS sources_count
+            FROM concepts WHERE id = %s
+        """, (concept_id,))
+        return cur.fetchone()
 
 
 def similar_concepts(conn, concept_id, limit=12):
@@ -226,17 +265,42 @@ def concept_source_segments(conn, concept_id: str) -> list:
 
 
 def co_occurring_concepts(conn, concept_id, limit=10):
+    """Концепты из общих блоков. Возвращает id, name, type, description, shared_count."""
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT c.id::text, c.name, c.type, COUNT(*) AS shared_segments
+            SELECT c.id::text, c.name, c.type, COALESCE(c.description, ''),
+                   COUNT(*) AS shared_segments
             FROM concepts c
             WHERE c.id != %s
               AND c.source_segments && (
                 SELECT source_segments FROM concepts WHERE id = %s
               )
-            GROUP BY c.id, c.name, c.type
+            GROUP BY c.id, c.name, c.type, c.description
             ORDER BY shared_segments DESC, c.name LIMIT %s
         """, (concept_id, concept_id, limit))
+        return cur.fetchall()
+
+
+def shared_segments_between(conn, concept_id_a: str, concept_id_b: str) -> list:
+    """Какие конкретно блоки общие у двух концептов (с таймкодом и текстом).
+
+    Возвращает: [(segment_id, raw_id, title, summary, text, start_ts, end_ts, source_file)]
+    Сигнатура совпадает с concept_source_segments — можно рендерить тем же helper'ом.
+    """
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT cs.id::text, rt.id::text, cs.title, cs.summary, cs.text,
+                   cs.start_ts, cs.end_ts, rt.source_file
+            FROM clean_segments cs
+            JOIN raw_transcripts rt ON rt.id = cs.raw_id
+            WHERE cs.id = ANY(
+                SELECT unnest(source_segments) FROM concepts WHERE id = %s
+            )
+            AND cs.id = ANY(
+                SELECT unnest(source_segments) FROM concepts WHERE id = %s
+            )
+            ORDER BY rt.source_file, cs.start_ts
+        """, (concept_id_a, concept_id_b))
         return cur.fetchall()
 
 

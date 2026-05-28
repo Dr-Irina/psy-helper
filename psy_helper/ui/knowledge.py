@@ -21,8 +21,8 @@ def render() -> None:
         f"{stats['concepts']} концептов"
     )
 
-    tab_search, tab_types, tab_lectures, tab_related = st.tabs(
-        ["🔍 Поиск", "🧩 По типам", "📖 По лекциям", "🔗 Похожие"]
+    tab_search, tab_lectures, tab_related = st.tabs(
+        ["🔍 Поиск и просмотр", "📖 По лекциям", "🔗 Похожие"]
     )
 
     # ─── Поиск ─────────────────────────────────────────────────────────────
@@ -34,13 +34,14 @@ def render() -> None:
         )
 
         with st.expander("⚙ Параметры поиска"):
+            counts = H.type_counts(conn)
             f_cols = st.columns([3, 1])
             with f_cols[0]:
                 selected_types = st.multiselect(
-                    "Фильтр по типам концептов (опционально)",
+                    "Фильтр по типам концептов (пусто = все типы)",
                     list(CONCEPT_TYPES.keys()),
                     default=[],
-                    format_func=lambda t: f"{t} — {H.TYPE_LABELS.get(t, t)}",
+                    format_func=lambda t: f"{H.TYPE_LABELS.get(t, t)} ({counts.get(t, 0)})",
                     key="search_types",
                 )
             with f_cols[1]:
@@ -52,18 +53,53 @@ def render() -> None:
                 )
 
         if query:
+            mode = "search"
             with st.spinner("Поиск…"):
                 v = H.get_model().encode([f"query: {query}"], normalize_embeddings=True)[0]
                 concepts = H.do_search_concepts(conn, query, v, selected_types or None, limit=depth)
                 segments = H.do_search_segments(conn, query, v, limit=depth)
                 lexicon = H.do_search_lexicon(conn, query, v, limit=depth)
+        elif selected_types:
+            mode = "browse"
+            # Запрос пустой + выбран хотя бы один тип → каталог: все концепты этих типов
+            concepts = H.browse_concepts_by_types(conn, selected_types)
+            segments = []
+            lexicon = []
+        else:
+            mode = "idle"
+            concepts, segments, lexicon = [], [], []
 
+        if mode == "idle":
+            st.info(
+                "Введи запрос — найду релевантные концепты, фирменные фразы и блоки лекций "
+                "(гибридный BM25 + векторный поиск).\n\n"
+                "Или выбери тип в «⚙ Параметры поиска» и оставь запрос пустым — "
+                "увидишь все концепты этого типа без ранжирования."
+            )
+            cstats = H.db_stats(conn)
             st.caption(
-                f"Найдено: **{len(concepts)}** концептов · "
+                f"В корпусе: **{cstats['concepts']}** концептов · "
+                f"**414** фирменных фраз Анны (вопросы + метафоры) · "
+                f"**{cstats['segments']}** смысловых блоков из {cstats['lectures']} лекций."
+            )
+        elif mode == "search":
+            st.caption(
+                f"Найдено по запросу «{query}»: **{len(concepts)}** концептов · "
                 f"**{len(lexicon)}** фирменных фраз · "
                 f"**{len(segments)}** блоков лекций"
             )
+        elif mode == "browse":
+            type_labels = ", ".join(H.TYPE_LABELS.get(t, t) for t in selected_types)
+            st.caption(
+                f"Каталог · типы: **{type_labels}** · "
+                f"всего: **{len(concepts)}** концептов "
+                f"(сортировка по количеству источников)"
+            )
 
+        if mode == "idle":
+            # Не показываем результаты-вкладки до запроса/фильтра.
+            pass
+        else:
             t_c, t_l, t_s = st.tabs([
                 f"🧩 Концепты ({len(concepts)})",
                 f"❓ Фразы Анны ({len(lexicon)})",
@@ -73,7 +109,7 @@ def render() -> None:
             # ─── Концепты с группировкой по типам ────────────────────────
             with t_c:
                 if not concepts:
-                    st.info("Ничего не нашлось — попробуй другие слова.")
+                    st.info("Ничего не нашлось — попробуй другие слова или другой тип.")
                 else:
                     TYPE_EMOJI = {
                         "term": "📖", "technique": "🛠", "claim": "💬", "warning": "⚠",
@@ -98,55 +134,34 @@ def render() -> None:
 
             # ─── Фразы Анны ───────────────────────────────────────────────
             with t_l:
-                st.caption("Её фирменные вопросы и метафоры из lexicon.json")
-                if not lexicon:
-                    st.info("Нет похожих фраз.")
+                if mode == "browse":
+                    st.caption("Чтобы увидеть релевантные фирменные фразы — введи запрос.")
                 else:
-                    _paginate(
-                        key="page_lex",
-                        items=lexicon,
-                        section_label=None,
-                        render=lambda li: _render_lexicon(li),
-                    )
+                    st.caption("Её фирменные вопросы и метафоры из lexicon.json")
+                    if not lexicon:
+                        st.info("Нет похожих фраз.")
+                    else:
+                        _paginate(
+                            key="page_lex",
+                            items=lexicon,
+                            section_label=None,
+                            render=lambda li: _render_lexicon(li),
+                        )
 
             # ─── Блоки лекций ─────────────────────────────────────────────
             with t_s:
-                if not segments:
-                    st.info("Нет похожих блоков.")
+                if mode == "browse":
+                    st.caption("Чтобы увидеть релевантные блоки лекций — введи запрос.")
                 else:
-                    _paginate(
-                        key="page_seg",
-                        items=segments,
-                        section_label=None,
-                        render=lambda s: _render_segment(s),
-                    )
-        else:
-            st.info(
-                "Задай вопрос как клиент или как Анна — своими словами. "
-                "Гибридный поиск (BM25 + векторный) ищет одновременно "
-                "по концептам, фирменным фразам и блокам лекций — каждый "
-                "источник в своей вкладке."
-            )
-
-    # ─── По типам ──────────────────────────────────────────────────────────
-    with tab_types:
-        counts = H.type_counts(conn)
-        options = list(CONCEPT_TYPES.keys())
-        chosen_type = st.selectbox(
-            "Тип концептов",
-            options,
-            format_func=lambda t: f"{H.TYPE_LABELS.get(t, t)} ({counts.get(t, 0)})",
-            key="browse_type",
-        )
-        items = H.concepts_of_type(conn, chosen_type)
-        st.caption(
-            f"{len(items)} концептов типа _{H.TYPE_LABELS.get(chosen_type, chosen_type)}_. "
-            f"Сортировка: по количеству источников, затем по алфавиту."
-        )
-        for name, description, sources_count in items:
-            sources_part = f" · в {sources_count} блоках" if sources_count else ""
-            with st.expander(f"**{name}**{sources_part}"):
-                st.write(description or "")
+                    if not segments:
+                        st.info("Нет похожих блоков.")
+                    else:
+                        _paginate(
+                            key="page_seg",
+                            items=segments,
+                            section_label=None,
+                            render=lambda s: _render_segment(s),
+                        )
 
     # ─── По лекциям ────────────────────────────────────────────────────────
     with tab_lectures:
@@ -163,10 +178,13 @@ def render() -> None:
             col1, col2 = st.columns([3, 2], gap="large")
             with col1:
                 st.subheader(f"📖 Блоки ({n_segs})")
-                for seg_id, title, summary, start_ts, end_ts in H.lecture_segments(conn, raw_id):
+                for seg_id, title, summary, text, start_ts, end_ts in H.lecture_segments(conn, raw_id):
                     ts = H.fmt_ts_range(start_ts, end_ts)
                     with st.expander(f"**{title}** · _{ts}_"):
-                        st.write(summary or "")
+                        if summary:
+                            st.write(summary)
+                        with st.expander("Показать оригинальный текст"):
+                            st.write(text or "")
 
             with col2:
                 st.subheader(f"🧩 Концепты ({n_cons})")
@@ -193,6 +211,20 @@ def render() -> None:
             )
             cid, name, ctype = chosen
 
+            # Карточка выбранного концепта — что это вообще
+            target = H.get_concept(conn, cid)
+            if target:
+                _t_id, t_name, t_type, t_desc, t_sources = target
+                sources_part = f" · в {t_sources} блоках" if t_sources else ""
+                st.markdown(f"### 📌 {t_name}")
+                st.caption(f"_{t_type}_{sources_part}")
+                if t_desc:
+                    st.info(t_desc)
+                if t_sources:
+                    with st.expander(f"📖 Откуда это (в {t_sources} блоках)"):
+                        _render_concept_source_blocks(H.concept_source_segments(conn, cid))
+                st.divider()
+
             col1, col2 = st.columns(2, gap="large")
             with col1:
                 st.subheader("🔗 По смыслу")
@@ -201,6 +233,9 @@ def render() -> None:
                     sp = f" · в {sources_count} блоках" if sources_count else ""
                     with st.expander(f"**{sname}** · _{stype}_ · sim {sim:.3f}{sp}"):
                         st.write(sdesc or "")
+                        if sources_count:
+                            with st.expander(f"📖 Откуда это (в {sources_count} блоках)"):
+                                _render_concept_source_blocks(H.concept_source_segments(conn, sid))
 
             with col2:
                 st.subheader("📍 Из тех же блоков")
@@ -208,9 +243,13 @@ def render() -> None:
                     "Концепты, которые встречаются в одних и тех же блоках лекций — "
                     "Анна обсуждает их вместе"
                 )
-                for sid, sname, stype, shared in H.co_occurring_concepts(conn, cid):
+                for sid, sname, stype, sdesc, shared in H.co_occurring_concepts(conn, cid):
                     with st.expander(f"**{sname}** · _{stype}_ · {shared} общих блоков"):
-                        pass
+                        st.write(sdesc or "")
+                        with st.expander(f"📍 Конкретно какие блоки общие ({shared})"):
+                            _render_concept_source_blocks(
+                                H.shared_segments_between(conn, cid, sid),
+                            )
 
 
 # ─── Пагинация и рендереры результатов ─────────────────────────────────────
@@ -241,28 +280,36 @@ def _paginate(*, key: str, items: list, section_label: str | None, render) -> No
 
 def _render_concept(c, conn) -> None:
     sources_part = f" · в {c.sources_count} блоках" if c.sources_count else ""
-    with st.expander(f"{c.name} · {c.score:.3f}{sources_part}"):
+    score_part = f" · {c.score:.3f}" if c.score else ""
+    with st.expander(f"{c.name}{score_part}{sources_part}"):
         st.write(c.description or "")
         if c.sources_count:
             with st.expander(f"📖 Откуда это (в {c.sources_count} блоках)"):
-                blocks = H.concept_source_segments(conn, c.id)
-                # группируем по лекции; внутри лекции сортируем по timestamp
-                by_lecture: dict[str, list] = {}
-                for row in blocks:
-                    _sid, _rid, _t, _s, _txt, st_ts, end_ts, src = row
-                    by_lecture.setdefault(src, []).append(row)
-                for src, items in by_lecture.items():
-                    items.sort(key=lambda r: r[5] or 0)
-                    lec = H.lecture_name(src)
-                    st.markdown(f"#### 📁 {lec}")
-                    for _sid, _rid, title, summary, text, st_ts, end_ts, _src in items:
-                        ts = H.fmt_ts_range(st_ts or 0, end_ts or 0)
-                        head = f"**{ts}**" + (f" · _{title}_" if title else "")
-                        st.markdown(head)
-                        if summary:
-                            st.caption(summary)
-                        with st.expander("Показать оригинальный текст"):
-                            st.write(text)
+                _render_concept_source_blocks(H.concept_source_segments(conn, c.id))
+
+
+def _render_concept_source_blocks(blocks: list) -> None:
+    """Сгруппировать блоки по лекции, отсортировать по таймкоду, отрендерить.
+
+    Принимает список строк (segment_id, raw_id, title, summary, text, start_ts, end_ts, source_file).
+    Используется в Поиске и в «Похожих».
+    """
+    by_lecture: dict[str, list] = {}
+    for row in blocks:
+        _sid, _rid, _t, _s, _txt, st_ts, end_ts, src = row
+        by_lecture.setdefault(src, []).append(row)
+    for src, items in by_lecture.items():
+        items.sort(key=lambda r: r[5] or 0)
+        lec = H.lecture_name(src)
+        st.markdown(f"#### 📁 {lec}")
+        for _sid, _rid, title, summary, text, st_ts, end_ts, _src in items:
+            ts = H.fmt_ts_range(st_ts or 0, end_ts or 0)
+            head = f"**{ts}**" + (f" · _{title}_" if title else "")
+            st.markdown(head)
+            if summary:
+                st.caption(summary)
+            with st.expander("Показать оригинальный текст"):
+                st.write(text)
 
 
 def _render_lexicon(li) -> None:
