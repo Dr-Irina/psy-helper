@@ -1,0 +1,20 @@
+# Streamlit theme — спокойный продуктовый стиль (без красного).
+#
+# Поменять акцент: правь primaryColor (см. варианты ниже).
+# Применяется без рестарта Streamlit — достаточно перерендерить вкладку.
+
+[theme]
+# Тёплый сине-зелёный — спокойный, не «AI-техно», не «феминный розовый».
+# Другие варианты, проверенные глазом:
+#   primaryColor = "#a47148"   # тёплая сепия / охра — «бумажный» вайб
+#   primaryColor = "#4a6fa5"   # графитовый синий — Notion/Linear-стиль
+#   primaryColor = "#8b7aa1"   # сдержанный сиреневый — мягко-нейтрально
+primaryColor = "#5b9aa0"
+
+base = "light"
+backgroundColor = "#fafaf7"             # тёплый off-white, не больничный белый
+secondaryBackgroundColor = "#f0ede5"    # для sidebar и expander'ов
+textColor = "#2b2b2b"
+
+# Без serif — но и без угловатого sans. Inter / system UI.
+font = "sans serif"
