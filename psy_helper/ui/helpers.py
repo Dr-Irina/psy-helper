@@ -47,18 +47,75 @@ TYPE_LABELS = {
 # ─── Auth + rate limit ────────────────────────────────────────────────────────
 
 def gate_password() -> None:
-    """Простой password gate. Без env STREAMLIT_PASSWORD — bypass (dev mode)."""
+    """Cookie-based auth через streamlit-authenticator.
+
+    Без env STREAMLIT_PASSWORD — bypass (dev mode).
+    С STREAMLIT_PASSWORD требуется ещё STREAMLIT_COOKIE_KEY (для подписи cookie).
+    Username фиксированный: `anna`. Cookie живёт 30 дней — F5 и закрытие
+    браузера на это время не сбросят сессию.
+    """
     expected = os.getenv("STREAMLIT_PASSWORD", "").strip()
-    if not expected or st.session_state.get("auth_ok"):
-        return
-    st.title("🔒 psy-helper")
-    pw = st.text_input("Пароль:", type="password")
-    if pw == expected:
-        st.session_state["auth_ok"] = True
-        st.rerun()
-    elif pw:
-        st.error("Неверный пароль.")
-    st.stop()
+    if not expected:
+        return  # dev bypass
+
+    cookie_key = os.getenv("STREAMLIT_COOKIE_KEY", "").strip()
+    if not cookie_key:
+        st.error(
+            "Сервер настроен некорректно: STREAMLIT_COOKIE_KEY не задан. "
+            "Задай его в .env (`openssl rand -hex 32`) и перезапусти."
+        )
+        st.stop()
+
+    import streamlit_authenticator as stauth
+
+    hashed = _get_hashed_password(expected)
+    credentials = {
+        "usernames": {
+            "anna": {
+                "name": "Анна",
+                "password": hashed,
+                "email": "anna@psy-helper.local",
+                "logged_in": False,
+                "first_name": "Анна",
+                "last_name": "",
+            }
+        }
+    }
+    authenticator = stauth.Authenticate(
+        credentials,
+        cookie_name="psy_helper_auth",
+        cookie_key=cookie_key,
+        cookie_expiry_days=30,
+    )
+
+    try:
+        authenticator.login(location="main", fields={"Form name": "🔒 Вход", "Username": "Имя", "Password": "Пароль", "Login": "Войти"})
+    except Exception as e:
+        st.error(f"Ошибка авторизации: {e}")
+        st.stop()
+
+    auth_status = st.session_state.get("authentication_status")
+    if auth_status is True:
+        # Logout-кнопка в сайдбаре
+        with st.sidebar:
+            try:
+                authenticator.logout(button_name="Выйти", location="sidebar")
+            except Exception:
+                pass
+        return  # пускаем в приложение
+    elif auth_status is False:
+        st.error("Неверный пароль")
+        st.stop()
+    else:
+        st.info("Введи имя (`anna`) и пароль, чтобы войти")
+        st.stop()
+
+
+@st.cache_resource
+def _get_hashed_password(password: str) -> str:
+    """Хеш считается один раз на старте приложения и кешируется."""
+    import streamlit_authenticator as stauth
+    return stauth.Hasher.hash(password)
 
 
 def check_rate_limit() -> tuple[bool, int]:
