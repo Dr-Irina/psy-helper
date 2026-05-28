@@ -28,6 +28,18 @@ class ConceptHit:
 
 
 @dataclass
+class LexiconHit:
+    id: str
+    kind: str            # 'question' | 'metaphor'
+    phrase: str
+    description: str | None
+    mentions: int | None
+    score: float
+    bm25_rank: int | None
+    vec_rank: int | None
+
+
+@dataclass
 class SegmentHit:
     id: str
     title: str | None
@@ -102,6 +114,71 @@ def hybrid_search_concepts(
 
     cur.execute(sql, params)
     return [ConceptHit(*row) for row in cur.fetchall()]
+
+
+def hybrid_search_lexicon(
+    cur,
+    query_text: str,
+    query_embedding,
+    *,
+    kinds: list[str] | None = None,
+    limit: int = 10,
+) -> list[LexiconHit]:
+    """Гибридный поиск по фирменным фразам Анны (вопросы + метафоры из lexicon)."""
+    kind_filter = ""
+    params_extra: dict[str, list[str]] = {}
+    if kinds:
+        kind_filter = "AND kind = ANY(%(kinds)s)"
+        params_extra["kinds"] = kinds
+
+    sql = f"""
+    WITH bm25 AS (
+      SELECT id, ROW_NUMBER() OVER (
+          ORDER BY ts_rank_cd(
+              to_tsvector('russian',
+                  COALESCE(phrase, '') || ' ' || COALESCE(description, '')),
+              q) DESC
+      ) AS rk
+      FROM lexicon_items, plainto_tsquery('russian', %(qtext)s) q
+      WHERE to_tsvector('russian',
+                COALESCE(phrase, '') || ' ' || COALESCE(description, '')) @@ q
+        {kind_filter}
+      ORDER BY rk LIMIT %(top)s
+    ),
+    vec AS (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> %(qvec)s) AS rk
+      FROM lexicon_items
+      WHERE embedding IS NOT NULL {kind_filter}
+      ORDER BY rk LIMIT %(top)s
+    ),
+    fused AS (
+      SELECT id,
+             SUM(1.0 / ({RRF_K} + rk)) AS score,
+             MAX(CASE WHEN src='b' THEN rk END) AS bm25_rank,
+             MAX(CASE WHEN src='v' THEN rk END) AS vec_rank
+      FROM (
+        SELECT id, rk, 'b' AS src FROM bm25
+        UNION ALL
+        SELECT id, rk, 'v' AS src FROM vec
+      ) u
+      GROUP BY id
+    )
+    SELECT li.id::text, li.kind, li.phrase, li.description, li.mentions,
+           f.score, f.bm25_rank, f.vec_rank
+    FROM fused f
+    JOIN lexicon_items li ON li.id = f.id
+    ORDER BY f.score DESC
+    LIMIT %(limit)s
+    """
+    params = {
+        "qtext": query_text,
+        "qvec": query_embedding,
+        "top": TOP_PER_SOURCE,
+        "limit": limit,
+        **params_extra,
+    }
+    cur.execute(sql, params)
+    return [LexiconHit(*row) for row in cur.fetchall()]
 
 
 def hybrid_search_segments(

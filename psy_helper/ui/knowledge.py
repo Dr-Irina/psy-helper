@@ -44,8 +44,9 @@ def render() -> None:
                 v = H.get_model().encode([f"query: {query}"], normalize_embeddings=True)[0]
                 concepts = H.do_search_concepts(conn, query, v, selected_types or None)
                 segments = H.do_search_segments(conn, query, v)
+                lexicon = H.do_search_lexicon(conn, query, v, limit=10)
 
-            col_c, col_s = st.columns([3, 2], gap="large")
+            col_c, col_l, col_s = st.columns([3, 2, 2], gap="large")
             with col_c:
                 st.subheader(f"🧩 Концепты ({len(concepts)})")
                 if not concepts:
@@ -54,6 +55,16 @@ def render() -> None:
                     sources_part = f" · в {c.sources_count} блоках" if c.sources_count else ""
                     with st.expander(f"**{c.name}** · _{c.type}_ · {c.score:.3f}{sources_part}"):
                         st.write(c.description or "")
+            with col_l:
+                st.subheader(f"❓ Фразы Анны ({len(lexicon)})")
+                st.caption("Её фирменные вопросы и метафоры из lexicon")
+                if not lexicon:
+                    st.info("Нет похожих фраз.")
+                for li in lexicon:
+                    icon = "❓" if li.kind == "question" else "🌀"
+                    mentions = f" · упомянуто {li.mentions} раз" if li.mentions else ""
+                    with st.expander(f"{icon} **«{li.phrase}»** · {li.score:.3f}{mentions}"):
+                        st.write(li.description or "")
             with col_s:
                 st.subheader(f"📖 Блоки лекций ({len(segments)})")
                 for s in segments:
@@ -64,8 +75,8 @@ def render() -> None:
         else:
             st.info(
                 "Задай вопрос как клиент или как Анна — своими словами. "
-                "Поиск гибридный: BM25 (по словам) + векторный (по смыслу). "
-                "Фильтр по типу — опционально."
+                "Гибридный поиск: BM25 (по словам) + векторный (по смыслу) "
+                "по концептам, лексикону (фирменные фразы) и блокам лекций."
             )
 
     # ─── По типам ──────────────────────────────────────────────────────────

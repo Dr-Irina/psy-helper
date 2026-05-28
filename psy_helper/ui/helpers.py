@@ -20,7 +20,11 @@ from psy_helper.content_gen.annotations import (
 )
 from psy_helper.content_gen.storage import get_therapist_id
 from psy_helper.db.connection import connect
-from psy_helper.search import hybrid_search_concepts, hybrid_search_segments
+from psy_helper.search import (
+    hybrid_search_concepts,
+    hybrid_search_lexicon,
+    hybrid_search_segments,
+)
 
 MODEL_NAME = "intfloat/multilingual-e5-large"
 
@@ -107,6 +111,11 @@ def do_search_concepts(conn, query_text, embedding, types, limit=12):
 def do_search_segments(conn, query_text, embedding, limit=6):
     with conn.cursor() as cur:
         return hybrid_search_segments(cur, query_text, embedding, limit=limit)
+
+
+def do_search_lexicon(conn, query_text, embedding, kinds=None, limit=10):
+    with conn.cursor() as cur:
+        return hybrid_search_lexicon(cur, query_text, embedding, kinds=kinds, limit=limit)
 
 
 def db_stats(conn) -> dict:
