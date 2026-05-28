@@ -65,6 +65,7 @@ services:
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?required}
       STREAMLIT_PASSWORD: ${STREAMLIT_PASSWORD:?required}
+      STREAMLIT_COOKIE_KEY: ${STREAMLIT_COOKIE_KEY:?required}
       POSTGRES_USER: psy
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
       POSTGRES_DB: psy_helper
