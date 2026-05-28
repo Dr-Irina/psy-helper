@@ -18,3 +18,9 @@ textColor = "#2b2b2b"
 
 # Без serif — но и без угловатого sans. Inter / system UI.
 font = "sans serif"
+
+[client]
+# Прячем служебное меню Streamlit в правом верхнем углу:
+# "minimal" — оставляет только три точки с базовыми пунктами (rerun, settings)
+# "viewer"  — прячет вообще всё (включая Deploy)
+toolbarMode = "viewer"
