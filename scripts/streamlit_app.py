@@ -31,7 +31,9 @@ st.set_page_config(
 gate_password()
 
 pg = st.navigation([
-    st.Page(render_knowledge, title="База знаний", icon="📚", default=True),
-    st.Page(render_content, title="Контент", icon="🎨"),
+    st.Page(render_knowledge, title="База знаний", icon="📚",
+            url_path="knowledge", default=True),
+    st.Page(render_content, title="Контент", icon="🎨",
+            url_path="content"),
 ])
 pg.run()
