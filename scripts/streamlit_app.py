@@ -46,7 +46,17 @@ from psy_helper.content_gen.loaders import (
     load_voice_doc,
     load_voice_profile,
 )
+from psy_helper.content_gen.annotations import (
+    VERDICT_LABELS,
+    STATUS_LABELS,
+    count_open_for,
+    delete_annotation,
+    list_annotations,
+    save_annotation,
+    update_annotation_status,
+)
 from psy_helper.content_gen.storage import (
+    get_therapist_id,
     list_drafts,
     load_draft,
     update_status,
@@ -99,6 +109,80 @@ def _record_generation() -> None:
 
 
 _gate_password()
+
+
+# ─── Annotation widget — переиспользуется в Источниках ───────────────────────
+
+def annotation_widget(conn, source_type: str, source_id: str, *,
+                      key_suffix: str = "", label: str = "💬 Оставить заметку") -> None:
+    """Мини-форма + список существующих заметок для (source_type, source_id).
+
+    Унифицирована: одинаково работает на voice_profile, voice_doc, lexicon item,
+    forbidden phrase, segment, psycho_type, channel, content_form.
+    """
+    therapist_id = get_therapist_id(conn)
+    existing = list_annotations(conn, source_type=source_type, source_id=source_id, limit=20)
+    open_count = sum(1 for a in existing if a["status"] == "open")
+    badge = f" · {open_count} открытых" if open_count else ""
+
+    suffix = key_suffix or f"{source_type}:{source_id}"
+    with st.expander(f"{label}{badge}", expanded=False):
+        if existing:
+            st.caption(f"Существующие заметки ({len(existing)}):")
+            for a in existing:
+                vlabel = VERDICT_LABELS.get(a["verdict"], a["verdict"])
+                slabel = STATUS_LABELS.get(a["status"], a["status"])
+                anchor = f" · «{a['line_anchor'][:40]}…»" if a["line_anchor"] else ""
+                st.markdown(
+                    f"- {vlabel} · {slabel} · "
+                    f"{a['created_at'].strftime('%m-%d %H:%M')}"
+                    f"{anchor}"
+                )
+                if a["comment"]:
+                    st.markdown(f"  > {a['comment']}")
+                if a["status"] == "open":
+                    cols = st.columns(3)
+                    if cols[0].button("✅ применено", key=f"addr_{suffix}_{a['id']}"):
+                        update_annotation_status(conn, a["id"], status="addressed")
+                        st.rerun()
+                    if cols[1].button("⊘ не править", key=f"wont_{suffix}_{a['id']}"):
+                        update_annotation_status(conn, a["id"], status="wontfix")
+                        st.rerun()
+                    if cols[2].button("🗑 удалить", key=f"del_{suffix}_{a['id']}"):
+                        delete_annotation(conn, a["id"])
+                        st.rerun()
+            st.divider()
+
+        verdict = st.radio(
+            "Тип заметки:",
+            ["good", "fix", "bad", "neutral"],
+            format_func=lambda v: VERDICT_LABELS[v],
+            horizontal=True, key=f"v_{suffix}",
+        )
+        anchor = st.text_input(
+            "Якорь (опционально — кусочек строки, к которой относится):",
+            key=f"a_{suffix}", placeholder="например: «истинная природа женщины»",
+        )
+        comment = st.text_area(
+            "Комментарий:", key=f"c_{suffix}", height=80,
+            placeholder="что не так / что хорошо / как лучше",
+        )
+        if st.button("💾 Сохранить заметку", key=f"save_{suffix}"):
+            if not comment.strip() and not anchor.strip():
+                st.warning("Хотя бы комментарий или якорь нужно заполнить.")
+            else:
+                save_annotation(
+                    conn,
+                    therapist_id=therapist_id,
+                    source_type=source_type,
+                    source_id=source_id,
+                    verdict=verdict,
+                    comment=comment.strip() or None,
+                    line_anchor=anchor.strip() or None,
+                )
+                st.toast("Заметка сохранена")
+                st.rerun()
+
 
 MODEL_NAME = "intfloat/multilingual-e5-large"
 
@@ -320,9 +404,9 @@ with st.sidebar:
         st.caption("Активной версии нет.")
 
 (tab_search, tab_types, tab_lectures, tab_related,
- tab_gen, tab_drafts, tab_sources) = st.tabs(
+ tab_gen, tab_drafts, tab_sources, tab_notes) = st.tabs(
     ["🔍 Поиск", "🧩 По типам", "📖 По лекциям", "🔗 Похожие",
-     "🎨 Генератор", "📋 Черновики", "📚 Источники"]
+     "🎨 Генератор", "📋 Черновики", "📚 Источники", "💭 Замечания"]
 )
 
 # --- Tab: Поиск ---
@@ -758,7 +842,9 @@ with tab_sources:
         for slug in list_voice_profiles():
             vp = load_voice_profile(slug)
             placeholder = " (PLACEHOLDER)" if vp.placeholder else ""
-            with st.expander(f"**{vp.name}** · `{slug}`{placeholder}", expanded=False):
+            open_n = count_open_for(conn, "voice_profile", slug)
+            badge = f" · 💭{open_n}" if open_n else ""
+            with st.expander(f"**{vp.name}** · `{slug}`{placeholder}{badge}", expanded=False):
                 col1, col2 = st.columns(2)
                 with col1:
                     st.markdown(f"- **Автор:** {vp.author}")
@@ -788,6 +874,7 @@ with tab_sources:
                 if vp.joint_markers:
                     st.markdown("**Joint markers (для совместного голоса):**")
                     st.markdown("\n".join(f"- {m}" for m in vp.joint_markers))
+                annotation_widget(conn, "voice_profile", slug)
 
     # ─── Voice documents ─────────────────────────────────────────────────────
     elif section.startswith("📜"):
@@ -808,8 +895,14 @@ with tab_sources:
                 key="sources_vd_pick",
             )
             text = load_voice_doc(str(chosen))
-            st.caption(f"`{chosen}` · {len(text):,} chars")
+            open_n = count_open_for(conn, "voice_doc", chosen.name)
+            badge = f" · 💭 {open_n} открытых заметок" if open_n else ""
+            st.caption(f"`{chosen}` · {len(text):,} chars{badge}")
             st.markdown(text)
+            annotation_widget(
+                conn, "voice_doc", chosen.name,
+                label="💬 Оставить заметку к этому voice doc (можно с якорем-фразой)",
+            )
 
     # ─── Стиль (lexicon + forbidden) ─────────────────────────────────────────
     elif section.startswith("💬"):
@@ -833,8 +926,14 @@ with tab_sources:
                          or s in q.get("description", "").lower()]
             st.caption(f"Показано: {len(items)}")
             for q in items:
-                with st.expander(f"**«{q['phrase']}»** · упомянуто {q.get('mentions', '?')} раз"):
+                open_n = count_open_for(conn, "lexicon_question", q["phrase"])
+                badge = f" · 💭{open_n}" if open_n else ""
+                with st.expander(
+                    f"**«{q['phrase']}»** · упомянуто {q.get('mentions', '?')} раз{badge}"
+                ):
                     st.write(q.get("description", ""))
+                    annotation_widget(conn, "lexicon_question", q["phrase"],
+                                      key_suffix=f"lq_{hash(q['phrase']) & 0xffff}")
         elif sub == "Метафоры":
             search = st.text_input("Поиск по фразе или описанию", key="lex_m_search")
             items = lex.get("metaphors", [])
@@ -844,23 +943,37 @@ with tab_sources:
                          or s in m.get("description", "").lower()]
             st.caption(f"Показано: {len(items)} · сортировка как в файле")
             for m in items[:150]:  # ограничиваем для скорости рендера
-                with st.expander(f"**«{m['phrase']}»** · упомянуто {m.get('mentions', '?')} раз"):
+                open_n = count_open_for(conn, "lexicon_metaphor", m["phrase"])
+                badge = f" · 💭{open_n}" if open_n else ""
+                with st.expander(
+                    f"**«{m['phrase']}»** · упомянуто {m.get('mentions', '?')} раз{badge}"
+                ):
                     st.write(m.get("description", ""))
+                    annotation_widget(conn, "lexicon_metaphor", m["phrase"],
+                                      key_suffix=f"lm_{hash(m['phrase']) & 0xffff}")
             if len(items) > 150:
                 st.caption(f"… скрыто ещё {len(items) - 150}. Уточни поиск чтобы увидеть.")
         else:  # Запрещённое
             st.markdown("### Запрещённые ТЕМЫ (топики)")
             for t in forb.get("topics", []):
-                with st.expander(f"**{t['label']}** · `{t['id']}`"):
+                open_n = count_open_for(conn, "forbidden_topic", t["id"])
+                badge = f" · 💭{open_n}" if open_n else ""
+                with st.expander(f"**{t['label']}** · `{t['id']}`{badge}"):
                     st.markdown(f"**Причина:** {t.get('reason', '—')}")
                     if t.get("examples"):
                         st.markdown("**Примеры:** " + ", ".join(f"«{e}»" for e in t["examples"]))
+                    annotation_widget(conn, "forbidden_topic", t["id"])
             st.markdown("### Запрещённые ФРАЗЫ (антипаттерны языка)")
             for g in forb.get("phrases", []):
                 applies = ", ".join(g.get("applies_to", []))
-                with st.expander(f"**{g['label']}** · `{g['id']}` · применяется к: {applies}"):
+                open_n = count_open_for(conn, "forbidden_phrase_group", g["id"])
+                badge = f" · 💭{open_n}" if open_n else ""
+                with st.expander(
+                    f"**{g['label']}** · `{g['id']}` · применяется к: {applies}{badge}"
+                ):
                     st.markdown(f"**Причина:** {g.get('reason', '—')}")
                     st.markdown("\n".join(f"- «{p}»" for p in g.get("phrases", [])))
+                    annotation_widget(conn, "forbidden_phrase_group", g["id"])
 
     # ─── Аудитория ───────────────────────────────────────────────────────────
     elif section.startswith("👤"):
@@ -873,7 +986,9 @@ with tab_sources:
             for slug in list_segments():
                 seg = load_segment(slug)
                 tag = " 🌟 главный" if seg.priority == 1 else ""
-                with st.expander(f"**{seg.name}** · `{slug}`{tag}"):
+                open_n = count_open_for(conn, "segment", slug)
+                badge = f" · 💭{open_n}" if open_n else ""
+                with st.expander(f"**{seg.name}** · `{slug}`{tag}{badge}"):
                     if seg.situation:
                         st.info(seg.situation.strip())
                     if seg.pain_phrases:
@@ -884,11 +999,14 @@ with tab_sources:
                         st.success(f"**Главное сообщение для них:**\n\n{seg.main_message.strip()}")
                     if seg.main_psycho_types:
                         st.caption(f"Подходящие психотипы: {', '.join(seg.main_psycho_types)}")
+                    annotation_widget(conn, "segment", slug)
         else:
             for slug in list_psycho_types():
                 pt = load_psycho_type(slug)
                 tag = " 🌟 главный" if pt.priority == 1 else ""
-                with st.expander(f"**{pt.name}** · `{slug}`{tag}"):
+                open_n = count_open_for(conn, "psycho_type", slug)
+                badge = f" · 💭{open_n}" if open_n else ""
+                with st.expander(f"**{pt.name}** · `{slug}`{tag}{badge}"):
                     st.markdown(f"**Мотиватор:** {pt.motivator}")
                     if pt.decision_speed:
                         st.markdown(f"**Скорость решения:** {pt.decision_speed}")
@@ -901,13 +1019,18 @@ with tab_sources:
                     if pt.cta_examples:
                         st.markdown("**Примеры CTA:**")
                         st.markdown("\n".join(f"- {c}" for c in pt.cta_examples))
+                    annotation_widget(conn, "psycho_type", slug)
 
     # ─── Каналы ──────────────────────────────────────────────────────────────
     elif section.startswith("📡"):
         st.caption("Канал = ГДЕ публикуется. Длина, hook, CTA, рекомендованная модель.")
         for slug in list_channels():
             ch = load_channel(slug)
-            with st.expander(f"**{ch.name}** · `{slug}` · модель: {ch.preferred_model.split('-')[1]}"):
+            open_n = count_open_for(conn, "channel", slug)
+            badge = f" · 💭{open_n}" if open_n else ""
+            with st.expander(
+                f"**{ch.name}** · `{slug}` · модель: {ch.preferred_model.split('-')[1]}{badge}"
+            ):
                 L = ch.length
                 if L.max_chars:
                     st.markdown(f"- **Длина:** {L.min_chars or '?'}–{L.max_chars} символов "
@@ -928,13 +1051,18 @@ with tab_sources:
                         f"сегментов={ch.best_segments or '—'} · "
                         f"hunt_stages={ch.best_hunt_stages or '—'}"
                     )
+                annotation_widget(conn, "channel", slug)
 
     # ─── Формы ───────────────────────────────────────────────────────────────
     elif section.startswith("🧱"):
         st.caption("Форма = КАК устроен нарратив (storytelling / opinion / quiz / …).")
         for slug in list_content_forms():
             cf = load_content_form(slug)
-            with st.expander(f"**{cf.name}** · `{slug}` · мин. фирменных фраз: {cf.lexicon_min}"):
+            open_n = count_open_for(conn, "content_form", slug)
+            badge = f" · 💭{open_n}" if open_n else ""
+            with st.expander(
+                f"**{cf.name}** · `{slug}` · мин. фирменных фраз: {cf.lexicon_min}{badge}"
+            ):
                 if cf.structure_template:
                     st.markdown("**Структура:**")
                     st.code(cf.structure_template.strip(), language="markdown")
@@ -950,3 +1078,100 @@ with tab_sources:
                     st.markdown("\n".join(f"- {n}" for n in cf.notes))
                 if cf.best_channels:
                     st.caption(f"Лучшие каналы: {', '.join(cf.best_channels)}")
+                annotation_widget(conn, "content_form", slug)
+
+
+# --- Tab: 💭 Замечания ---
+with tab_notes:
+    st.subheader("Заметки на исходные материалы")
+    st.caption(
+        "Что Анна отметила в Источниках — для подготовки следующих версий "
+        "(voice_doc, lexicon, антипаттерны и т.д.)."
+    )
+
+    fcol1, fcol2, fcol3 = st.columns(3)
+    with fcol1:
+        n_status = st.selectbox(
+            "Статус", ["open", "all", "addressed", "wontfix"],
+            format_func=lambda s: {"all": "все"}.get(s, STATUS_LABELS.get(s, s)),
+            key="notes_status",
+        )
+    with fcol2:
+        n_verdict = st.selectbox(
+            "Вердикт", ["all"] + list(VERDICT_LABELS),
+            format_func=lambda v: "все" if v == "all" else VERDICT_LABELS[v],
+            key="notes_verdict",
+        )
+    with fcol3:
+        SOURCE_TYPE_LABELS = {
+            "all": "все типы",
+            "voice_profile": "🎙 Voice profile",
+            "voice_doc": "📜 Voice doc",
+            "lexicon_question": "❓ Вопрос (lexicon)",
+            "lexicon_metaphor": "🌀 Метафора (lexicon)",
+            "forbidden_topic": "🚫 Топик",
+            "forbidden_phrase_group": "🚫 Группа фраз",
+            "segment": "👤 Сегмент",
+            "psycho_type": "🧠 Психотип",
+            "channel": "📡 Канал",
+            "content_form": "🧱 Форма",
+        }
+        n_stype = st.selectbox(
+            "Тип источника", list(SOURCE_TYPE_LABELS),
+            format_func=lambda k: SOURCE_TYPE_LABELS[k],
+            key="notes_stype",
+        )
+
+    notes = list_annotations(
+        conn,
+        source_type=None if n_stype == "all" else n_stype,
+        status=None if n_status == "all" else n_status,
+        verdict=None if n_verdict == "all" else n_verdict,
+        limit=300,
+    )
+
+    # Сводка по вердиктам
+    by_verdict = {v: sum(1 for n in notes if n["verdict"] == v) for v in VERDICT_LABELS}
+    counts_line = " · ".join(
+        f"{VERDICT_LABELS[v]}: **{by_verdict[v]}**" for v in VERDICT_LABELS if by_verdict[v]
+    ) or "—"
+    st.caption(f"Найдено: {len(notes)} · {counts_line}")
+
+    if not notes:
+        st.info("Заметок нет. Открой «📚 Источники» — на каждой карточке есть форма.")
+    for a in notes:
+        vlabel = VERDICT_LABELS.get(a["verdict"], a["verdict"])
+        slabel = STATUS_LABELS.get(a["status"], a["status"])
+        stype_label = SOURCE_TYPE_LABELS.get(a["source_type"], a["source_type"])
+        anchor = a["line_anchor"] or ""
+        header = (
+            f"{vlabel} · {slabel} · {stype_label} · `{a['source_id']}` · "
+            f"{a['created_at'].strftime('%m-%d %H:%M')}"
+        )
+        with st.expander(header):
+            if anchor:
+                st.markdown(f"**Якорь:** «{anchor}»")
+            if a["comment"]:
+                st.markdown(f"**Комментарий:** {a['comment']}")
+            if a["addressed_in_version"]:
+                st.caption(f"Применено в: {a['addressed_in_version']}")
+            st.caption(f"id={a['id']} · author={a['author']}")
+
+            if a["status"] == "open":
+                bcols = st.columns(4)
+                with bcols[0]:
+                    if st.button("✅ применено", key=f"napp_{a['id']}"):
+                        update_annotation_status(conn, a["id"], status="addressed")
+                        st.rerun()
+                with bcols[1]:
+                    if st.button("⊘ не править", key=f"nwont_{a['id']}"):
+                        update_annotation_status(conn, a["id"], status="wontfix")
+                        st.rerun()
+                with bcols[2]:
+                    if st.button("🗑 удалить", key=f"ndel_{a['id']}"):
+                        delete_annotation(conn, a["id"])
+                        st.rerun()
+            else:
+                if st.button("↺ Открыть заново", key=f"nreopen_{a['id']}"):
+                    update_annotation_status(conn, a["id"], status="open")
+                    st.rerun()
