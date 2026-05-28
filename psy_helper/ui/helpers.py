@@ -88,15 +88,24 @@ def gate_password() -> None:
         cookie_expiry_days=30,
     )
 
-    try:
-        authenticator.login(location="main", fields={"Form name": "🔒 Вход", "Username": "Имя", "Password": "Пароль", "Login": "Войти"})
-    except Exception as e:
-        st.error(f"Ошибка авторизации: {e}")
-        st.stop()
-
     auth_status = st.session_state.get("authentication_status")
+
+    # Форму login рисуем ТОЛЬКО когда ещё не залогинены (иначе она остаётся
+    # видна сверху приложения)
+    if not auth_status:
+        try:
+            authenticator.login(
+                location="main",
+                fields={"Form name": "🔒 Вход", "Username": "Имя",
+                        "Password": "Пароль", "Login": "Войти"},
+            )
+        except Exception as e:
+            st.error(f"Ошибка авторизации: {e}")
+            st.stop()
+        # Перечитываем статус после попытки login
+        auth_status = st.session_state.get("authentication_status")
+
     if auth_status is True:
-        # Logout-кнопка в сайдбаре
         with st.sidebar:
             try:
                 authenticator.logout(button_name="Выйти", location="sidebar")
