@@ -1,0 +1,108 @@
+# Production compose для psy-helper.
+#
+# Под существующий nginx на хосте (а не контейнерный Caddy) — потому что
+# nginx уже работает на этом сервере и держит TLS для других проектов.
+#
+# Принципы:
+#   - Postgres и Redis НЕ выставляются на хост (только внутри Docker-сети
+#     `internal`) — другие приложения на сервере их не видят
+#   - UI слушает ТОЛЬКО на 127.0.0.1:8501 — наружу не светит, только
+#     локальный nginx может проксировать
+#   - Все секреты через .env (chmod 600, owner = deploy)
+#
+# Перед запуском создай .env (см. .env.example.prod) с:
+#   ANTHROPIC_API_KEY=sk-ant-...         # отдельный prod-key с hard-limit'ом
+#   STREAMLIT_PASSWORD=...               # openssl rand -hex 32
+#   POSTGRES_PASSWORD=...                # openssl rand -hex 24
+#
+# Запуск (на сервере как deploy):
+#   cd /home/deploy/psy-helper
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Логи:
+#   docker compose -f docker-compose.prod.yml logs -f ui
+#
+# Stop:
+#   docker compose -f docker-compose.prod.yml down
+#
+# Nginx-конфиг лежит в deploy/nginx-psy.conf — установить отдельно
+# (см. docs/deploy.md).
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: psy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: psy_helper
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U psy -d psy_helper"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    networks:
+      - internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ui:
+    build: .
+    image: psy-helper-app:latest
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?required}
+      STREAMLIT_PASSWORD: ${STREAMLIT_PASSWORD:?required}
+      POSTGRES_USER: psy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: psy_helper
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+    volumes:
+      # Кэш HF-моделей (e5-large ~2 GB качается при первом запуске)
+      - models-cache:/root/.cache/huggingface
+      # Конфиги (voice_profiles, audience, channels, content_forms, lexicon, voice_doc).
+      # ro — Анна не может случайно поломать через UI. Обновляем через
+      # `git pull && docker compose restart ui`.
+      - ./data:/app/data:ro
+    networks:
+      - internal
+    ports:
+      # Только localhost — снаружи не доступен.
+      # Существующий nginx на хосте проксирует с psy.cookiteasy.food → 127.0.0.1:8501
+      - "127.0.0.1:8501:8501"
+    command: >
+      streamlit run scripts/streamlit_app.py
+      --server.address=0.0.0.0
+      --server.port=8501
+      --server.headless=true
+      --browser.gatherUsageStats=false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+
+networks:
+  internal:
+    driver: bridge
+
+
+volumes:
+  postgres-data:
+  redis-data:
+  models-cache:
