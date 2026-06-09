@@ -330,6 +330,25 @@ def concept_source_segments(conn, concept_id: str) -> list:
         return cur.fetchall()
 
 
+def concept_voice(conn, concept_id: str) -> tuple[int | None, list[str]]:
+    """Голос Ани: значимость (salience 1-3) + дословные цитаты концепта (тексты).
+
+    Это то, что отличает v2-корпус — Анин голос, а не пересказ.
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT salience, quotes FROM concepts WHERE id = %s", (concept_id,))
+        row = cur.fetchone()
+    if not row:
+        return None, []
+    salience, quotes = row
+    texts: list[str] = []
+    for q in (quotes or []):
+        t = (q.get("text") if isinstance(q, dict) else str(q)) if q else ""
+        if t and t.strip():
+            texts.append(t.strip())
+    return salience, texts
+
+
 def co_occurring_concepts(conn, concept_id, limit=10):
     """Концепты из общих блоков. Возвращает id, name, type, description, shared_count."""
     with conn.cursor() as cur:

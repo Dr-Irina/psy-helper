@@ -279,10 +279,14 @@ def _paginate(*, key: str, items: list, section_label: str | None, render) -> No
 
 
 def _render_concept(c, conn) -> None:
+    salience, quotes = H.concept_voice(conn, c.id)
     sources_part = f" · в {c.sources_count} блоках" if c.sources_count else ""
     score_part = f" · {c.score:.3f}" if c.score else ""
-    with st.expander(f"{c.name}{score_part}{sources_part}"):
+    sal_part = (" · " + "🔥" * salience) if salience else ""
+    with st.expander(f"{c.name}{score_part}{sources_part}{sal_part}"):
         st.write(c.description or "")
+        for q in quotes:                       # голос Ани — дословные цитаты
+            st.markdown(f"> 🗣 «{q}»")
         if c.sources_count:
             with st.expander(f"📖 Откуда это (в {c.sources_count} блоках)"):
                 _render_concept_source_blocks(H.concept_source_segments(conn, c.id))
