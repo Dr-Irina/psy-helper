@@ -97,6 +97,34 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Retrieval-API для контент-завода: концепты Ани с цитатами по теме.
+  # Слушает ТОЛЬКО на localhost — наружу не светит. Завод на этом же сервере
+  # ходит на 127.0.0.1:8010; для внешнего завода — отдельный protected nginx-location
+  # с API-ключом (см. docs/deploy_v2.md), не открывать публично как есть.
+  # ВНИМАНИЕ по RAM: грузит e5-large (~2 ГБ) + bge-reranker (~2.2 ГБ).
+  retrieval:
+    build: .
+    image: psy-helper-app:latest
+    environment:
+      POSTGRES_USER: psy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: psy_helper
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+    volumes:
+      - models-cache:/root/.cache/huggingface
+    networks:
+      - internal
+    ports:
+      - "127.0.0.1:8010:8000"
+    command: >
+      uvicorn psy_helper.api.retrieval_service:app
+      --host 0.0.0.0 --port 8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 
 networks:
   internal:

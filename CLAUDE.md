@@ -14,15 +14,25 @@ AI-ассистент конкретного психолога **Анны**. **
 |---|---|
 | Лекций транскрибировано | **68** |
 | Смысловых блоков (clean_segments) | **1073** |
-| Концептов (concepts) | **3919** |
+| Концептов (concepts) | **2418** (v2: перевыделены с голосом Ани) |
+| └ дословных цитат Ани (`quotes`) | **3655** (100% концептов), накапливаются по упоминаниям |
+| └ значимость (`salience` 1-3) | 154 / 1352 / 912 |
 | Эмбеддингов (1024-dim e5) | для всех segments + concepts |
 | Voice-document | v1 в БД (устарел), **v2 сгенерирован**, ждёт ревью Анны |
 | Multi-label теги концептов | **`topics` + `subtopics` + `hunt_stages`** (Haiku 4.5 + Batch) |
 | Streamlit UI | работает на http://localhost:8501 |
-| Гибридный поиск | BM25 + vector + RRF |
+| Гибридный поиск | BM25 + vector + RRF + **cross-encoder reranker** (bge-reranker-v2-m3) |
+| Retrieval-API для завода | **`/retrieve` (FastAPI)** — концепты Ани с цитатами по теме |
 | LLM-обработка | **Anthropic API (Haiku/Sonnet + Batch)** для новых задач; legacy через `claude -p` |
 
-**Что сделано:** транскрипция (Mac CPU + Windows GPU) → смысловая сегментация (claude -p) → извлечение концептов 9 типов (claude -p) → эмбеддинги локально → ingest в Postgres → гибридный поиск → Streamlit UI с 4 вкладками (поиск / по типам / по лекциям / похожие).
+**Что сделано:** транскрипция (Mac CPU + Windows GPU) → смысловая сегментация (claude -p) → извлечение концептов 9 типов → эмбеддинги локально → ingest в Postgres → гибридный поиск → Streamlit UI с 4 вкладками (поиск / по типам / по лекциям / похожие).
+
+**Перевыделение концептов v2 (2026-06-08):** старый корпус (3919, пересказ) заменён на v2 (2418) с **дословными цитатами Ани** (голос) отдельно от `description` (поиск) + `salience` (вес). Извлечение — **локальная gemma2:27b через Ollama** (нативно на Mac M3 Max, Metal-GPU; qwen2.5:32b проиграл по salience/скорости). Пайплайн: `analyze_speakers.py` (спикер-атрибуция Ани, `data/speakers.json`) → `extract_concepts_local.py` (спикер-фильтр цитат, окна блоков, валидатор дословности, JSON-устойчивость) → миграция `007_concept_voice.sql` (`quotes` JSONB + `salience` + `clean_segments.speaker`) → `ingest_concepts_v2.py` (бэкап `concepts_v1_backup` + перезалив + PII-проход → `data/pii_review.md`) → `embed_concepts.py` → `consolidate_concepts.py --sim 0.96` (семантич. дедуп, снапшот `concepts_pre_consolidation`). Бэкенд извлечения параметризован (`EXTRACT_MODEL`/`EXTRACT_API_URL`). Старый `extract_concepts_via_claude.py` — legacy.
+
+**Генерация на голосе + точность поиска (2026-06-09):**
+- *Фаза 2 — голос в генерации:* `content_gen/retrieval.py::format_concepts_for_prompt` подаёт под каждым концептом дословные цитаты Ани; `retrieve_signature()` тянет фирменные вопросы/метафоры (тип question/metaphor) **под тему** — `prompts.py::_format_signature_phrases` берёт их вместо статичного `lexicon.json[:8]` (закрывает «один и тот же вопрос»). Лечит обе боли: пересказ→голос, один вариант→варьируется.
+- *Фаза 3 — точность ретривала:* двухэтапно — гибрид достаёт пул 50 → `rerank_concepts()` (cross-encoder `bge-reranker-v2-m3`, локально) → top-K, теги c1.. после rerank (provenance цел); **parent-child** (`_parent_segments` — родительские блоки концепта через `source_segments`); **contextual-сегменты** — `embed_segments.py` теперь эмбеддит `passage: [Лекция] title. summary. text` (контекст из готовых title/summary, без LLM; `--reembed` для переэмбеддинга).
+- *Фаза 4 — мостик в завод:* `psy_helper/api/retrieval_service.py` (FastAPI), сервис `retrieval` в docker-compose (порт 8010→8000). `POST /retrieve {query, filters, k}` → концепты с цитатами + signature + готовый `knowledge_block` для инъекции в `{knowledge}` завода. Контракт generic. Завод-сторона (источник knowledge → этот URL) — отдельно в его репо.
 
 **Что осталось до полного MVP-0 по ТЗ:**
 - Встреча с Анной по review-файлу (артефакты готовы в `data/review_for_meeting.md` + `docs/architecture.md`)
@@ -317,6 +327,20 @@ POSTGRES_DB=psy_helper
 # Локально на Mac (UI)
 docker compose up -d postgres redis ui
 open http://localhost:8501
+
+# Retrieval-API для контент-завода (мостик голоса Ани)
+docker compose up -d retrieval
+curl -s localhost:8010/retrieve -H "Content-Type: application/json" \
+  -d '{"query":"ревность в паре","k":5}' | python3 -m json.tool
+
+# Перевыделение концептов локальной моделью (Ollama должен быть поднят)
+#   ollama serve & ; ollama pull gemma2:27b
+python3 scripts/analyze_speakers.py                      # спикер-атрибуция Ани
+python3 scripts/extract_concepts_local.py [--force] [лекции...]
+docker compose run --rm app python scripts/ingest_concepts_v2.py
+docker compose run --rm app python scripts/embed_concepts.py
+docker compose run --rm app python scripts/embed_segments.py --reembed   # contextual
+docker compose run --rm app python scripts/consolidate_concepts.py --apply --sim 0.96
 
 # Публичная ссылка через ngrok (временная, $0 free tier)
 ngrok http 8501

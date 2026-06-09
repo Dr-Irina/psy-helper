@@ -180,17 +180,26 @@ def _format_raw_quotes(quotes: list[dict], voice: VoiceProfile) -> str:
     return "\n".join(out) if out else "(нет цитат)"
 
 
-def _format_signature_phrases(lexicon: dict, lexicon_min: int) -> str:
+def _format_signature_phrases(retrieval, lexicon: dict, lexicon_min: int) -> str:
     if lexicon_min <= 0:
         return "(для этой формы не требуется)"
-    questions = [q["phrase"] for q in lexicon.get("questions", [])[:8]]
-    metaphors = [m["phrase"] for m in lexicon.get("metaphors", [])[:8]]
+    # Приоритет — фирменные вопросы/метафоры, РЕТРИВНУТЫЕ под тему (варьируются по
+    # теме → в каждом посте разные формулировки). Статичный lexicon — страховка.
+    sig = getattr(retrieval, "signature", []) or []
+    questions = [s["phrase"] for s in sig if s["type"] == "question"]
+    metaphors = [s["phrase"] for s in sig if s["type"] == "metaphor"]
+    if len(questions) < 3:
+        questions += [q["phrase"] for q in lexicon.get("questions", [])[:5]]
+    if len(metaphors) < 3:
+        metaphors += [m["phrase"] for m in lexicon.get("metaphors", [])[:5]]
+    questions = list(dict.fromkeys(questions))[:8]   # дедуп, сохраняя порядок
+    metaphors = list(dict.fromkeys(metaphors))[:8]
     parts = []
     if questions:
         parts.append("ВОПРОСЫ автора: " + " / ".join(f"«{q}»" for q in questions))
     if metaphors:
         parts.append("МЕТАФОРЫ автора: " + " / ".join(f"«{m}»" for m in metaphors))
-    return "\n".join(parts)
+    return "\n".join(parts) or "(нет подходящих фирменных фраз)"
 
 
 def _format_forbidden(voice: VoiceProfile, forbidden_topics: dict) -> str:
@@ -312,7 +321,7 @@ def build_system_prompt(
         form_of_address=voice.form_of_address,
         mat_allowed="да, точечно как усилитель" if voice.mat_allowed else "нет",
         raw_quotes_block=_format_raw_quotes(raw_quotes, voice),
-        signature_phrases_block=_format_signature_phrases(lexicon, content_form.lexicon_min),
+        signature_phrases_block=_format_signature_phrases(retrieval, lexicon, content_form.lexicon_min),
         lexicon_min=content_form.lexicon_min,
         forbidden_block=_format_forbidden(voice, forbidden_topics),
         term_replacements=", ".join(
